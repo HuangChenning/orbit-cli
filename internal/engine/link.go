@@ -16,34 +16,47 @@ func (e *Engine) Link(ctx context.Context, deps []config.Dependency, force bool)
 		return fmt.Errorf("no dependencies configured")
 	}
 	var errs []error
+	if e.Config.OrbitRepo != nil {
+		l, err := acquire(e.Config.OrbitRepo.LocalPath + ".orbit.lock")
+		if err != nil {
+			return err
+		}
+		defer l.Unlock()
+	}
 	for _, d := range deps {
 		if !d.Link {
-			source := filepath.Join(e.cache(d), filepath.FromSlash(d.Subdir))
+			sources := []string{filepath.Join(e.cache(d), filepath.FromSlash(d.Subdir))}
+			if e.Config.OrbitRepo != nil && d.MirrorDir != "" {
+				sources = append(sources, filepath.Join(e.Config.OrbitRepo.LocalPath, filepath.FromSlash(d.MirrorDir)))
+			}
 			// Resolve the configured destinations even though linking is disabled.
 			d.Link = true
 			for _, target := range e.Config.Targets(d) {
-				if err := removeMatchingLink(source, target); err != nil {
-					errs = append(errs, err)
+				for _, source := range sources {
+					if err := removeMatchingLink(source, target); err != nil {
+						errs = append(errs, err)
+					}
 				}
 			}
 			continue
 		}
-		l, err := e.lock(d, false)
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		source, _, err := e.ready(ctx, d)
+		source, _, err := e.localAsset(d)
 		if err == nil {
 			for _, target := range e.Config.Targets(d) {
-				if err = makeLink(source, target, force); err != nil {
+				replace := force
+				if old, readErr := os.Readlink(target); readErr == nil {
+					if !filepath.IsAbs(old) {
+						old = filepath.Join(filepath.Dir(target), old)
+					}
+					replace = replace || filepath.Clean(old) == filepath.Join(e.cache(d), filepath.FromSlash(d.Subdir))
+				}
+				if err = makeLink(source, target, replace); err != nil {
 					errs = append(errs, err)
 				}
 			}
 		} else {
 			errs = append(errs, err)
 		}
-		l.Unlock()
 	}
 	return errors.Join(errs...)
 }

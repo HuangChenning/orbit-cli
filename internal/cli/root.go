@@ -21,7 +21,8 @@ link_targets:
   skills:
     - "~/.claude/skills"
 dependencies: []
-# Default mirror local_path: ~/.orbit/repo (set orbit_repo.remote and branch first).
+# Set orbit_repo.remote and branch before orbit vendor sync.
+# Default orbit_repo.local_path: ~/.orbit/repo.
 # Add dependencies with name, source, version, subdir, mirror_dir and link.
 # Example: mirror_dir: skills/example maps to ~/.claude/skills/example.
 `
@@ -29,14 +30,14 @@ dependencies: []
 func Execute() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	root := &cobra.Command{Use: "orbit", Short: "Sync, link and mirror upstream Git assets", SilenceUsage: true, SilenceErrors: true}
+	root := &cobra.Command{Use: "orbit", Short: "Download, link and publish Git-backed assets", SilenceUsage: true, SilenceErrors: true}
 	var explicit string
 	var labels []string
 	var jobs int
 	var timeout time.Duration
 	root.PersistentFlags().StringVar(&explicit, "config", "", "configuration path (otherwise search parent directories)")
 	root.PersistentFlags().StringArrayVarP(&labels, "label", "l", nil, "select any matching label; repeat for OR")
-	root.PersistentFlags().IntVar(&jobs, "jobs", 4, "maximum concurrent Git sync operations")
+	root.PersistentFlags().IntVar(&jobs, "jobs", 4, "maximum concurrent vendor download operations")
 	root.PersistentFlags().DurationVar(&timeout, "timeout", 2*time.Minute, "timeout per Git operation")
 	load := func(coverage bool) (*engine.Engine, []config.Dependency, error) {
 		if jobs < 1 || timeout <= 0 {
@@ -94,13 +95,26 @@ func Execute() error {
 	}
 	init.Flags().StringVarP(&initPath, "path", "p", filepath.Join(home, ".orbit"), "directory for orbit.yaml")
 	root.AddCommand(init)
-	root.AddCommand(&cobra.Command{Use: "sync", Short: "Fetch upstream and discard managed cache edits", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+	vendor := &cobra.Command{Use: "vendor", Short: "Manage upstream assets"}
+	vendor.AddCommand(&cobra.Command{Use: "sync", Short: "Download upstream assets into the local Orbit repository", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		e, d, err := load(false)
 		if err != nil {
 			return err
 		}
-		return e.Sync(cmd.Context(), d)
+		if e.Config.OrbitRepo == nil {
+			return fmt.Errorf("orbit_repo is required for vendor sync")
+		}
+		if err = e.Sync(cmd.Context(), d); err != nil {
+			return err
+		}
+		for _, dep := range d {
+			if dep.MirrorDir != "" {
+				return e.Assemble(cmd.Context(), d, len(labels) == 0)
+			}
+		}
+		return nil
 	}})
+	root.AddCommand(vendor)
 	var linkForce bool
 	link := &cobra.Command{Use: "link", Short: "Reconcile global targets with dependency link switches", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		e, d, err := load(false)
@@ -113,23 +127,23 @@ func Execute() error {
 	root.AddCommand(link)
 	var force, yes bool
 	var message string
-	mirror := &cobra.Command{Use: "mirror", Short: "Publish clean cached assets to orbit_repo", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+	publish := &cobra.Command{Use: "sync", Short: "Commit and push local Orbit assets to the personal remote", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		e, d, err := load(false)
 		if err != nil {
 			return err
 		}
 		if force && !yes {
-			if err = confirm(cmd, "Rewrite remote mirror history?"); err != nil {
+			if err = confirm(cmd, "Rewrite personal repository history?"); err != nil {
 				return err
 			}
 		}
 		e.Message = message
-		return e.Mirror(cmd.Context(), d, len(labels) == 0, force)
+		return e.Publish(cmd.Context(), d, len(labels) == 0, force)
 	}}
-	mirror.Flags().BoolVarP(&force, "force", "f", false, "allow forced push after explicit confirmation")
-	mirror.Flags().BoolVar(&yes, "yes", false, "confirm the requested force operation")
-	mirror.Flags().StringVar(&message, "message", "Update Orbit asset snapshot", "mirror commit message")
-	root.AddCommand(mirror)
+	publish.Flags().BoolVarP(&force, "force", "f", false, "allow forced push after explicit confirmation")
+	publish.Flags().BoolVar(&yes, "yes", false, "confirm the requested force operation")
+	publish.Flags().StringVar(&message, "message", "Update Orbit asset snapshot", "sync commit message")
+	root.AddCommand(publish)
 	var cleanYes bool
 	clean := &cobra.Command{Use: "clean", Short: "Remove only the selected, owned cache clones", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		e, d, err := load(false)
@@ -140,7 +154,7 @@ func Execute() error {
 			fmt.Fprintln(cmd.OutOrStdout(), "remove cache:", dep.Name)
 		}
 		if !cleanYes {
-			if err = confirm(cmd, "Remove these caches? Existing links will need orbit sync."); err != nil {
+			if err = confirm(cmd, "Remove these caches? Assembled assets and links are preserved."); err != nil {
 				return err
 			}
 		}

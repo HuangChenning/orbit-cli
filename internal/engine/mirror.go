@@ -45,7 +45,12 @@ func readManifest(path string) (Manifest, error) {
 	if err != nil {
 		return m, err
 	}
-	if err = yaml.Unmarshal(b, &m); err != nil {
+	return parseManifest(b)
+}
+
+func parseManifest(b []byte) (Manifest, error) {
+	m := Manifest{Version: "1.0"}
+	if err := yaml.Unmarshal(b, &m); err != nil {
 		return m, err
 	}
 	if m.Version != "1.0" {
@@ -149,7 +154,7 @@ func copyAsset(source, dest, mirrorDir string, matcher *ignore.GitIgnore) error 
 	})
 }
 
-func (e *Engine) Mirror(ctx context.Context, deps []config.Dependency, full, force bool) (resultErr error) {
+func (e *Engine) Assemble(ctx context.Context, deps []config.Dependency, full bool) (resultErr error) {
 	var selectedDeps []config.Dependency
 	for _, d := range deps {
 		if d.MirrorDir != "" {
@@ -162,7 +167,7 @@ func (e *Engine) Mirror(ctx context.Context, deps []config.Dependency, full, for
 	}
 	r := e.Config.OrbitRepo
 	if r == nil {
-		return fmt.Errorf("orbit_repo is required for mirror")
+		return fmt.Errorf("orbit_repo is required for vendor sync")
 	}
 	// Hold all cache locks through snapshot construction; sync/clean cannot race the copy.
 	var locks []*flock.Flock
@@ -209,13 +214,10 @@ func (e *Engine) Mirror(ctx context.Context, deps []config.Dependency, full, for
 		return err
 	}
 	defer l.Unlock()
-	if err = e.prepareMirror(ctx); err != nil {
+	if err = e.prepareRepository(ctx); err != nil {
 		return err
 	}
 	p := r.LocalPath
-	if err = e.updateMirror(ctx, force); err != nil {
-		return err
-	}
 	old, err := readManifest(filepath.Join(p, ".orbit-manifest.yaml"))
 	if err != nil {
 		return err
@@ -274,9 +276,9 @@ func (e *Engine) Mirror(ctx context.Context, deps []config.Dependency, full, for
 		return err
 	}
 	var moved, installed []string
-	committed := false
+	completed := false
 	defer func() {
-		if !committed {
+		if !completed {
 			if err := rollbackSnapshot(p, backup, installed, moved); err != nil {
 				resultErr = errors.Join(resultErr, fmt.Errorf("rollback failed; backup retained at %s: %w", backup, err))
 				return
@@ -318,59 +320,19 @@ func (e *Engine) Mirror(ctx context.Context, deps []config.Dependency, full, for
 	manifestPath := filepath.Join(p, ".orbit-manifest.yaml")
 	oldBytes, readErr := os.ReadFile(manifestPath)
 	defer func() {
-		if !committed {
+		if !completed {
 			if readErr == nil {
 				os.WriteFile(manifestPath, oldBytes, 0600)
 			} else {
 				os.Remove(manifestPath)
 			}
-			e.git(context.Background(), p, "reset", "--mixed", "HEAD")
 		}
 	}()
 	if err = os.WriteFile(manifestPath, manifest, 0600); err != nil {
 		return err
 	}
-	paths := []string{".orbit-manifest.yaml"}
-	for dir := range remove {
-		paths = append(paths, dir)
-	}
-	// Removed roots that never contained tracked files need no pathspec.
-	for _, path := range paths {
-		_, statErr := os.Lstat(filepath.Join(p, path))
-		tracked, _ := e.git(ctx, p, "ls-files", "--", path)
-		if os.IsNotExist(statErr) && tracked == "" {
-			continue
-		}
-		if _, err = e.git(ctx, p, "add", "-f", "-A", "--", path); err != nil {
-			return err
-		}
-	}
-	if err = e.verifySnapshotBytes(ctx, p, entries); err != nil {
-		return err
-	}
-	diff, err := e.git(ctx, p, "diff", "--cached", "--name-only")
-	if err != nil {
-		return err
-	}
-	if diff != "" {
-		message := e.Message
-		if message == "" {
-			message = "Update Orbit asset snapshot"
-		}
-		if _, err = e.git(ctx, p, "-c", "core.hooksPath="+os.DevNull, "commit", "-m", message); err != nil {
-			return err
-		}
-	}
-	committed = true
-	args := []string{"push"}
-	if force {
-		args = append(args, "--force")
-	}
-	args = append(args, "origin", "HEAD:refs/heads/"+r.Branch)
-	if _, err = e.git(ctx, p, args...); err != nil {
-		return fmt.Errorf("mirror push failed; check remote credentials/SSH keys; local commit retained for retry: %w", err)
-	}
-	fmt.Fprintln(e.Out, "mirrored", len(entries), "dependencies")
+	completed = true
+	fmt.Fprintln(e.Out, "assembled", len(entries), "dependencies into", p)
 	return nil
 }
 
@@ -418,15 +380,18 @@ func (e *Engine) verifySnapshotBytes(ctx context.Context, root string, entries [
 		if len(fields) != 3 || fields[2] != "0" {
 			return fmt.Errorf("unmerged Git index entry")
 		}
-		selected := path == ".orbit-manifest.yaml"
+		selected := false
 		for _, entry := range entries {
-			if strings.HasPrefix(path, entry.MirrorDir+"/") {
+			if path == entry.MirrorDir || strings.HasPrefix(path, entry.MirrorDir+"/") {
 				selected = true
 				break
 			}
 		}
 		if !selected {
 			continue
+		}
+		if fields[0] == "160000" {
+			return fmt.Errorf("nested Git repository cannot be published: %s", path)
 		}
 		info, err := os.Lstat(filepath.Join(root, filepath.FromSlash(path)))
 		if err != nil {
@@ -453,13 +418,13 @@ func (e *Engine) verifySnapshotBytes(ctx context.Context, root string, entries [
 			return closeErr
 		}
 		if hex.EncodeToString(h.Sum(nil)) != fields[1] {
-			return fmt.Errorf("Git attributes/filter would transform asset bytes at %s; remove the transforming attributes before mirroring", path)
+			return fmt.Errorf("Git attributes/filter would transform asset bytes at %s; remove the transforming attributes before publishing", path)
 		}
 	}
 	return nil
 }
 
-func (e *Engine) prepareMirror(ctx context.Context) error {
+func (e *Engine) prepareRepository(ctx context.Context) error {
 	r := e.Config.OrbitRepo
 	p := r.LocalPath
 	if err := config.NoSymlinks(p); err != nil {
@@ -489,30 +454,30 @@ func (e *Engine) prepareMirror(ctx context.Context) error {
 	}
 	info, err := os.Stat(filepath.Join(p, ".git"))
 	if err != nil || !info.IsDir() {
-		return fmt.Errorf("mirror must be a Git checkout with a real .git directory")
+		return fmt.Errorf("repository must be a Git checkout with a real .git directory")
 	}
 	remote, err := e.git(ctx, p, "remote", "get-url", "origin")
 	if err != nil {
 		return err
 	}
 	if remote != r.Remote {
-		return fmt.Errorf("mirror remote mismatch; refusing adoption")
+		return fmt.Errorf("repository remote mismatch; refusing adoption")
 	}
 	branch, err := e.git(ctx, p, "symbolic-ref", "--short", "HEAD")
 	if err != nil || branch != r.Branch {
-		return fmt.Errorf("mirror branch mismatch")
+		return fmt.Errorf("repository branch mismatch")
 	}
 	status, err := e.git(ctx, p, "status", "--porcelain", "--untracked-files=all", "--ignored")
 	if err != nil {
 		return err
 	}
 	if status != "" {
-		return fmt.Errorf("mirror working tree is dirty; preserve/commit your changes before retrying")
+		return e.checkManagedChanges(ctx)
 	}
 	return nil
 }
 
-func (e *Engine) updateMirror(ctx context.Context, force bool) error {
+func (e *Engine) updateRepository(ctx context.Context, force bool) error {
 	r := e.Config.OrbitRepo
 	p := r.LocalPath
 	remote, err := e.git(ctx, p, "ls-remote", "--heads", "origin", "refs/heads/"+r.Branch)
@@ -527,6 +492,13 @@ func (e *Engine) updateMirror(ctx context.Context, force bool) error {
 	}
 	remoteRef := "refs/remotes/origin/" + r.Branch
 	if _, err = e.git(ctx, p, "rev-parse", "--verify", "HEAD"); err != nil {
+		status, statusErr := e.git(ctx, p, "status", "--porcelain", "--untracked-files=all", "--ignored")
+		if statusErr != nil {
+			return statusErr
+		}
+		if status != "" {
+			return fmt.Errorf("remote was initialized after local assembly; preserve local assets and reconcile the remote history before sync")
+		}
 		_, err = e.git(ctx, p, "reset", "--hard", remoteRef)
 		return err
 	}
@@ -538,7 +510,7 @@ func (e *Engine) updateMirror(ctx context.Context, force bool) error {
 		return err
 	}
 	if !force {
-		return fmt.Errorf("mirror history diverged; refusing automatic merge/rebase; inspect it or explicitly use --force")
+		return fmt.Errorf("repository history diverged; refusing automatic merge/rebase; inspect it or explicitly use --force")
 	}
 	return nil
 }

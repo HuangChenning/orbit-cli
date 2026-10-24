@@ -504,7 +504,11 @@ func (e *Engine) Check(ctx context.Context, deps []config.Dependency) (map[strin
 			issues = append(issues, err.Error())
 			continue
 		}
-		source, _, err := e.ready(ctx, d)
+		_, _, err = e.ready(ctx, d)
+		var source string
+		if err == nil && d.Link {
+			source, _, err = e.localAsset(d)
+		}
 		if err != nil {
 			issues = append(issues, err.Error())
 		} else {

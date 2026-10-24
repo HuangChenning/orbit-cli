@@ -86,7 +86,7 @@ func acquire(path string) (*flock.Flock, error) {
 func (e *Engine) lock(d config.Dependency, create bool) (*flock.Flock, error) {
 	if !create {
 		if _, err := os.Stat(e.Config.GlobalCache); err != nil {
-			return nil, fmt.Errorf("cache missing; run orbit sync: %w", err)
+			return nil, fmt.Errorf("cache missing; run orbit vendor sync: %w", err)
 		}
 	}
 	return acquire(filepath.Join(e.Config.GlobalCache, ".locks", identity(d)+".lock"))
@@ -99,7 +99,7 @@ func (e *Engine) readState(d config.Dependency) (state, error) {
 	}
 	b, err := os.ReadFile(e.statePath(d))
 	if err != nil {
-		return s, fmt.Errorf("%s cache is not managed; run orbit sync: %w", d.Name, err)
+		return s, fmt.Errorf("%s cache is not managed; run orbit vendor sync: %w", d.Name, err)
 	}
 	if err = json.Unmarshal(b, &s); err != nil {
 		return s, err
@@ -174,21 +174,21 @@ func (e *Engine) ready(ctx context.Context, d config.Dependency) (string, state,
 		return "", s, err
 	}
 	if s.Commit == "" {
-		return "", s, fmt.Errorf("incomplete cache; run orbit sync")
+		return "", s, fmt.Errorf("incomplete cache; run orbit vendor sync")
 	}
 	if err = e.verifyRepository(ctx, d); err != nil {
 		return "", s, err
 	}
 	head, err := e.git(ctx, e.cache(d), "rev-parse", "HEAD")
 	if err != nil || head != s.Commit {
-		return "", s, fmt.Errorf("cache commit changed; run orbit sync")
+		return "", s, fmt.Errorf("cache commit changed; run orbit vendor sync")
 	}
 	status, err := e.git(ctx, e.cache(d), "status", "--porcelain", "--untracked-files=all", "--ignored")
 	if err != nil {
 		return "", s, err
 	}
 	if status != "" {
-		return "", s, fmt.Errorf("dirty cache for %s; run orbit sync to restore upstream", d.Name)
+		return "", s, fmt.Errorf("dirty cache for %s; run orbit vendor sync to restore upstream", d.Name)
 	}
 	p := filepath.Join(e.cache(d), filepath.FromSlash(d.Subdir))
 	if err = config.NoSymlinks(p); err != nil {
@@ -241,47 +241,50 @@ func (e *Engine) syncOne(ctx context.Context, d config.Dependency) error {
 	if err = e.verifyRepository(ctx, d); err != nil {
 		return err
 	}
-	if _, err = e.git(ctx, p, "fetch", "--prune", "--no-tags", "origin", "+refs/heads/*:refs/orbit/heads/*", "+refs/tags/*:refs/orbit/tags/*"); err != nil {
-		return err
-	}
 	v := d.Version
-	ref := ""
+	ref := v
 	tag := ""
-	resolve := func(r string) (string, bool) {
-		out, err := e.git(ctx, p, "rev-parse", "--verify", r+"^{commit}")
-		return out, err == nil
-	}
-	switch {
-	case strings.HasPrefix(v, "refs/heads/"):
-		ref = "refs/orbit/heads/" + strings.TrimPrefix(v, "refs/heads/")
-	case strings.HasPrefix(v, "refs/tags/"):
-		ref = "refs/orbit/tags/" + strings.TrimPrefix(v, "refs/tags/")
-		tag = ref
-	case fullSHA.MatchString(v):
-		ref = v
-	default:
-		_, branch := resolve("refs/orbit/heads/" + v)
-		_, istag := resolve("refs/orbit/tags/" + v)
-		if branch && istag {
-			return fmt.Errorf("ambiguous branch/tag %q; use refs/heads/ or refs/tags/", v)
+	refspec := v
+	if !fullSHA.MatchString(v) {
+		candidates := []string{"refs/heads/" + v, "refs/tags/" + v}
+		if strings.HasPrefix(v, "refs/heads/") || strings.HasPrefix(v, "refs/tags/") {
+			candidates = []string{v}
 		}
-		if branch {
-			ref = "refs/orbit/heads/" + v
-		} else if istag {
-			ref = "refs/orbit/tags/" + v
-			tag = ref
-		} else {
-			return fmt.Errorf("upstream version %q does not exist", v)
-		}
-	}
-	commit, ok := resolve(ref)
-	if !ok && fullSHA.MatchString(v) {
-		_, err = e.git(ctx, p, "fetch", "--no-tags", "origin", v)
+		args := append([]string{"ls-remote", "--refs", "origin"}, candidates...)
+		advertised, err := e.git(ctx, p, args...)
 		if err != nil {
 			return err
 		}
-		commit, ok = resolve(v)
+		available := map[string]bool{}
+		for _, line := range strings.Split(advertised, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) == 2 {
+				available[fields[1]] = true
+			}
+		}
+		remoteRef := ""
+		for _, candidate := range candidates {
+			if available[candidate] {
+				if remoteRef != "" {
+					return fmt.Errorf("ambiguous branch/tag %q; use refs/heads/ or refs/tags/", v)
+				}
+				remoteRef = candidate
+			}
+		}
+		if remoteRef == "" {
+			return fmt.Errorf("upstream version %q does not exist", v)
+		}
+		ref = "refs/orbit/" + strings.TrimPrefix(remoteRef, "refs/")
+		refspec = "+" + remoteRef + ":" + ref
+		if strings.HasPrefix(remoteRef, "refs/tags/") {
+			tag = ref
+		}
 	}
+	if _, err = e.git(ctx, p, "fetch", "--depth=1", "--no-tags", "origin", refspec); err != nil {
+		return err
+	}
+	commit, err := e.git(ctx, p, "rev-parse", "--verify", ref+"^{commit}")
+	ok := err == nil
 	if !ok {
 		return fmt.Errorf("cannot resolve version %q", v)
 	}

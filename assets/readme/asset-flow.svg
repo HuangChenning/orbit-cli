@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="384" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
-  <title id="title">Orbit: one shared cache, two independent outputs</title>
-  <desc id="desc">Sync fetches upstream Git into a shared local cache. Link maps selected directories to developer tools with symlinks. Mirror copies cached assets into a local repository and pushes to a personal Git remote. Neither output writes back to upstream.</desc>
+  <title id="title">Orbit: download locally, publish separately</title>
+  <desc id="desc">Vendor sync fetches upstream Git through an internal cache and assembles local assets in ~/.orbit/repo. Link maps these local assets to developer tools. Sync commits and pushes the local assets to a personal Git remote. No command writes back to upstream.</desc>
   <!-- Runtime overview. Source: internal/engine/{cache,link,mirror}.go. -->
   <rect width="1200" height="720" rx="16" fill="#F5F7FA"/>
   <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" fill="#172536">
@@ -9,38 +9,38 @@
       <text x="96" y="182" font-size="44" font-weight="650">Upstream Git</text>
     </g>
     <g id="shared-cache">
-      <rect x="512" y="64" width="624" height="176" rx="12" fill="#3D5A80"/>
-      <text x="548" y="136" font-size="48" font-weight="650" fill="#F5F7FA">Shared cache</text>
-      <text x="548" y="197" font-size="40" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="#F5F7FA">~/.orbit/cache</text>
+      <rect x="512" y="64" width="624" height="176" rx="12" fill="none" stroke="#CDD6E0" stroke-width="2"/>
+      <text x="548" y="136" font-size="48" font-weight="650">Internal cache</text>
+      <text x="548" y="197" font-size="40" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="#536477">~/.orbit/cache</text>
     </g>
     <g id="sync-connector" fill="#3D5A80" stroke="#3D5A80" stroke-width="2">
       <path d="M392 152 H486" fill="none"/>
       <path d="M486 146 L498 152 L486 158 Z" stroke="none"/>
-      <text x="402" y="128" font-size="40" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" stroke="none">sync</text>
+      <text x="402" y="128" font-size="32" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" stroke="none">fetch</text>
     </g>
     <g id="independent-outputs" stroke="#3D5A80" stroke-width="2" fill="none">
-      <path d="M824 240 V288 H280 V330"/>
-      <path d="M824 288 H890 V330"/>
-      <path d="M274 330 L280 342 L286 330 Z" fill="#3D5A80" stroke="none"/>
+      <path d="M824 240 V288 H890 V330"/>
+      <path d="M644 430 H510"/>
+      <path d="M510 424 L498 430 L510 436 Z" fill="#3D5A80" stroke="none"/>
       <path d="M884 330 L890 342 L896 330 Z" fill="#3D5A80" stroke="none"/>
     </g>
-    <g font-size="40" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="#3D5A80">
-      <text x="310" y="325">link</text>
-      <text x="918" y="325">mirror</text>
+    <g font-size="32" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="#3D5A80">
+      <text x="530" y="408">link</text>
+      <text x="918" y="325">assemble</text>
     </g>
     <g id="tool-directories">
       <rect x="64" y="354" width="432" height="152" rx="12" fill="none" stroke="#CDD6E0" stroke-width="2"/>
       <text x="96" y="446" font-size="48" font-weight="650">Tool folders</text>
     </g>
     <g id="mirror-workspace">
-      <rect x="644" y="354" width="492" height="152" rx="12" fill="none" stroke="#CDD6E0" stroke-width="2"/>
-      <text x="676" y="413" font-size="48" font-weight="650">Mirror repo</text>
-      <text x="676" y="474" font-size="40" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="#536477">~/.orbit/repo</text>
+      <rect x="644" y="354" width="492" height="152" rx="12" fill="#3D5A80"/>
+      <text x="676" y="413" font-size="48" font-weight="650" fill="#F5F7FA">Local assets</text>
+      <text x="676" y="474" font-size="40" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="#F5F7FA">~/.orbit/repo</text>
     </g>
     <g id="push-connector" stroke="#3D5A80" stroke-width="2" fill="#3D5A80">
       <path d="M890 506 V564" fill="none"/>
       <path d="M884 564 L890 576 L896 564 Z" stroke="none"/>
-      <text x="918" y="554" font-size="40" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" stroke="none">push</text>
+      <text x="918" y="554" font-size="40" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" stroke="none">sync</text>
     </g>
     <g id="personal-remote">
       <rect x="644" y="588" width="492" height="68" rx="12" fill="none" stroke="#CDD6E0" stroke-width="2"/>

@@ -6,19 +6,20 @@ English · [简体中文](README.zh-CN.md)
 
 Go 1.20+ · System Git · Declarative configuration
 
-[Quick start](#quick-start) · [Commands](#commands) · [Personal mirror](#mirror-to-a-personal-repository) · [Axon migration checks](#check-and-repair-an-axon-migration)
+[Quick start](#quick-start) · [Commands](#commands) · [Publish to GitHub](#publish-to-github) · [Axon migration checks](#check-and-repair-an-axon-migration)
 
 ## Overview
 
-Orbit helps developers reuse **skills, workflows, scripts, and commands** across tools and projects. Sync upstream repositories into a shared cache, distribute selected directories through symlinks, and optionally aggregate them into a personal Git repository.
+Orbit helps developers reuse **skills, workflows, scripts, and commands** across tools and projects. `orbit vendor sync` downloads upstream assets into `~/.orbit/repo`, `orbit link` distributes them through symlinks, and `orbit sync` commits and pushes the local assets to your personal Git repository.
 
 ## Example output
 
-This output comes from an isolated local Git example. Two tools' `skill-creator` links resolve to the same cached directory.
+Example session from an isolated local Git repository, with the local repository path abbreviated. Two tools' `skill-creator` links resolve to the same assembled directory.
 
 ```console
-$ orbit sync
+$ orbit vendor sync
 synced skill-creator
+assembled 1 dependencies into <local-repo>
 $ orbit link
 $ orbit check
 {
@@ -30,9 +31,9 @@ $ orbit check
 
 ## How it works
 
-<img src="assets/readme/asset-flow.svg" width="640" alt="Orbit asset flow: sync fetches upstream Git into a shared cache; link maps cached directories to developer tools; mirror aggregates the cache into a local repository and pushes to a personal Git remote.">
+<img src="assets/readme/asset-flow.svg" width="640" alt="Orbit asset flow: vendor sync downloads upstream Git through an internal cache into the local asset repository; link maps local assets to developer tools; sync commits and pushes local assets to your personal Git remote.">
 
-`sync` updates the cache, `link` creates or removes links according to the configuration, and `mirror` commits and pushes. Run each command independently. The personal mirror never writes back to upstream.
+`vendor sync` downloads and assembles assets locally without committing or pushing. `link` creates or removes tool links. `sync` commits and pushes local assets without downloading upstream or overwriting local content from the cache. Nothing writes back to upstream.
 
 ## Quick start
 
@@ -49,11 +50,16 @@ orbit init
 
 Add the PATH setting to your shell startup file to make it persistent. By default, `orbit init` creates `~/.orbit/orbit.yaml` without overwriting an existing configuration.
 
-Edit that file to declare your first dependency:
+Create your personal remote repository, then edit this file. Replace `YOUR_ACCOUNT` with your account and declare your first dependency:
 
 ```yaml
 version: "1.0"
 global_cache: "~/.orbit/cache"
+
+orbit_repo:
+  remote: "git@github.com:YOUR_ACCOUNT/orbit-repo.git"
+  branch: "main"
+  local_path: "~/.orbit/repo"
 
 link_targets:
   skills:
@@ -73,29 +79,43 @@ dependencies:
 Then run:
 
 ```sh
-orbit sync
+orbit vendor sync
 orbit link
 orbit check
 ```
 
-This example links the asset to `~/.claude/skills/skill-creator` and `~/.codex/skills/skill-creator`. If a real file, directory, or symlinked parent directory occupies a destination, resolve the conflict manually first.
+The downloaded files appear in `~/.orbit/repo/skills/skill-creator`. This example links that directory to `~/.claude/skills/skill-creator` and `~/.codex/skills/skill-creator`. If a real file, directory, or symlinked parent directory occupies a destination, resolve the conflict manually first.
 
 ## Commands
 
 | Command | Purpose | Common options |
 | --- | --- | --- |
 | `orbit init` | Generate configuration without overwriting an existing file | `--path <dir>` |
-| `orbit sync` | Update the cache from upstream | `--label <label>`, `--jobs <n>` |
+| `orbit vendor sync` | Download upstream and assemble local assets | `--label <label>`, `--jobs <n>` |
 | `orbit link` | Create or remove matching links according to the `link` switch | `--label <label>`, `--force` |
-| `orbit mirror` | Aggregate, commit, and push a personal mirror | `--label <label>`, `--message <text>` |
+| `orbit sync` | Commit and push local assets to your personal remote | `--label <label>`, `--message <text>` |
 | `orbit check` | Check the cache and enabled links | `--fix` with explicit Axon inputs |
 | `orbit clean` | Preview and confirm deletion of selected managed caches | `--label <label>`, `--yes` |
 
-Labels are case-sensitive. Repeated `--label` flags use **OR** matching; no matches is an error. Sync runs at most 4 concurrent Git operations by default. Each Git operation has a two-minute timeout, adjustable with `--timeout`.
+Labels are case-sensitive. Repeated `--label` flags use **OR** matching; no matches is an error. Vendor downloads run at most 4 concurrent Git operations by default. Each Git operation has a two-minute timeout, adjustable with `--timeout`.
+
+Vendor downloads fetch a shallow snapshot of the configured version, rather than every upstream branch and its full history. The cache is internal; use the assembled files under `~/.orbit/repo`.
 
 ```sh
-orbit sync --label skills --label workflows --jobs 4
+orbit vendor sync --label skills --label workflows --jobs 4
 ```
+
+### Clean downloaded caches
+
+Run `orbit link` first if tool links still point to the old cache location. Then remove the managed caches for all dependencies in the current configuration:
+
+```sh
+orbit clean
+```
+
+The command lists the selected dependencies and asks for confirmation. Use `orbit clean --yes` to skip confirmation, or `orbit clean --label skills` to select a group. No `--all` flag is needed or supported. Caches no longer declared in the configuration are not selected.
+
+Cleanup preserves assembled assets in `~/.orbit/repo` and links pointing there. `orbit sync` can still commit and push those assets without a cache; the next `orbit vendor sync` downloads the removed caches again and refreshes the selected local assets.
 
 ## Directories and configuration
 
@@ -104,24 +124,24 @@ orbit sync --label skills --label workflows --jobs 4
 | `~/.orbit/bin/orbit` | Binary built by the installation steps above |
 | `~/.orbit/orbit.yaml` | Global configuration |
 | `~/.orbit/cache` | Git cache shared by source and version |
-| `~/.orbit/repo` | Local repository created on the first mirror operation |
+| `~/.orbit/repo` | Downloaded assets under `skills/`, `workflows/`, `scripts/`, and `commands/`, according to `mirror_dir` |
 
 Configuration lookup order: `--config <file>` → nearest `orbit.yaml` in the project or its parent directories → global configuration. Relative paths resolve from the configuration file's directory. Paths starting with `~/` are supported.
 
 Declare tool root directories once in the global `link_targets`, grouped by category. Each dependency uses a `link` switch. The first segment of `mirror_dir` selects the category; the remaining path is appended to each tool root.
 
-After changing an existing dependency's `link` to `false`, run `orbit link` again to remove symlinks at the current destinations that still point to that dependency's cached subdirectory, including dangling links. Cache contents, real files, directories, and links pointing elsewhere are preserved. Cleanup works even when the cache is missing and respects `--label`. If you also change the source, version, `subdir`, `mirror_dir`, or global targets, old links that no longer match the current configuration must be handled manually.
+After changing an existing dependency's `link` to `false`, run `orbit link` again to remove symlinks at the current destinations that still point to that dependency's local asset directory, including dangling links. Matching links to the old cache location are also removed. Cache contents, local assets, real files, directories, and links pointing elsewhere are preserved. Cleanup works even when the cache is missing and respects `--label`. Old links at destinations no longer present in the configuration require manual handling.
 
 | Dependency field | Default or behavior when omitted |
 | --- | --- |
 | `name`, `source`, `version` | Required; names must be unique |
 | `subdir` | Defaults to `.`, using the whole repository |
-| `link` | Defaults to `false`; `orbit link` removes matching old links; sync and mirror remain available |
-| `mirror_dir` | If omitted, sync only; required when linking is enabled |
+| `link` | Defaults to `false`; `orbit link` removes matching old links; download and publication remain available |
+| `mirror_dir` | Asset path inside the local repo; if omitted, download to cache only; required when linking is enabled |
 
-## Mirror to a personal repository
+## Publish to GitHub
 
-Add `orbit_repo` to the same configuration. Replace `YOUR_ACCOUNT` with your account, create the remote repository, and ensure your Git credentials work:
+The `orbit_repo` section specifies your personal remote and local asset directory. Ensure the remote exists and your Git credentials work:
 
 ```yaml
 orbit_repo:
@@ -130,16 +150,17 @@ orbit_repo:
   local_path: "~/.orbit/repo"
 ```
 
-You can omit `local_path`; it defaults to `~/.orbit/repo`. After syncing, run:
+You can omit `local_path`; it defaults to `~/.orbit/repo`. After downloading and reviewing your local assets, publish them with:
 
 ```sh
-orbit mirror
+orbit sync
 ```
 
-- Selected caches must be clean and synced. If any preflight check fails, no partial snapshot is published.
-- Nested `.git` entries are excluded. Internal relative symlinks are preserved; absolute or escaping links are rejected. An `.orbitignore` beside the configuration uses Gitignore rules. `.env` is not implicitly excluded.
-- `.orbit-manifest.yaml` records sources and resolved commits. A label-filtered mirror preserves unselected assets. A full mirror removes only stale assets previously managed by Orbit; the first takeover preserves unmanaged content such as a README.
-- Unchanged content produces no empty commit. A failed push keeps the local commit for the next attempt. Git attributes or filters that transform asset bytes cause an error and rollback.
+- `vendor sync` prepares all selected assets before replacing managed directories. Failed downloads or copy validation leave the previous assembled assets intact. A full vendor refresh removes only stale assets previously managed by Orbit; label-filtered refreshes preserve unselected assets. Local edits in refreshed assets are discarded to match upstream.
+- The first vendor operation may clone your personal remote to preserve its history and unmanaged files such as a README. It creates no commit and performs no push. Later downloads do not publish pending local changes.
+- Vendor assembly excludes nested `.git` entries and applies Gitignore-style rules from the `.orbitignore` beside your configuration. Internal relative symlinks are preserved; absolute or escaping links are rejected. `.env` is not implicitly excluded. Publication rejects nested Git repositories added locally.
+- `sync` publishes the current managed local assets, including your edits, without requiring the cache or contacting upstream dependencies. Unmanaged working-tree changes and existing staged changes must be handled manually. An untracked `.DS_Store` at the repository root is preserved without being published, even when Git ignores it; tracked or staged changes to it still require manual handling. `--label` stages only selected assets and their manifest entries, leaving other local changes pending.
+- `.orbit-manifest.yaml` records upstream sources and resolved commits used for assembly; it does not claim that later local edits match those commits. Unchanged content produces no empty commit. A failed push retains the local commit for retry. Git attributes or filters that transform asset bytes cause publication to fail and clear its staging changes while preserving local files.
 
 ## Check and repair an Axon migration
 
@@ -159,17 +180,17 @@ orbit check --axon-config "$HOME/.axon/axon.yaml" \
 
 Repair saves a byte-for-byte backup first and reports its changes. YAML comments and formatting are normalized. Custom dependencies, labels, and `link: false` settings are preserved. Source conflicts are not automatically overwritten, and the original Axon files are not modified.
 
-Add `--repo "$HOME/.orbit/repo"` to either command to compare the mirror's file inventory and report unconfigured assets. This checks neither file bytes nor versions and does not guess unknown assets' sources.
+Add `--repo "$HOME/.orbit/repo"` to either command to compare the local repository's file inventory and report unconfigured assets. This checks neither file bytes nor versions and does not guess unknown assets' sources.
 
 ## Limitations and behavior
 
 | Scenario | Behavior |
 | --- | --- |
-| Local cache edits | Sync uses fetch, reset --hard, and clean -ffdx to discard changes, including ignored files; edits through symlinks also affect the shared cache |
+| Local edits | Vendor sync restores selected caches and managed local assets to upstream; edits through tool links affect the local repo, and sync publishes them |
 | Version selection | Branches track upstream; a full SHA pins a commit; ambiguous branch/tag names or changed cached tags are rejected |
 | Link conflicts | `link --force` replaces incorrect symlinks only; real files, directories, and symlinked parents require manual handling |
-| Diverged mirror history | Normal push by default, without automatic merge/rebase; `mirror --force` requires confirmation, or explicit `--force --yes` in non-interactive use |
-| Non-interactive cleanup | `clean --yes` confirms deletion of selected managed caches; `--yes` alone does not authorize a force push |
+| Diverged personal repository history | Normal push by default, without automatic merge/rebase; `sync --force` requires confirmation, or explicit `--force --yes` in non-interactive use |
+| Cache cleanup | `clean --yes` confirms deletion of selected managed caches; assembled assets and their links remain available; `--yes` alone does not authorize a force push |
 | Git extensions | Git LFS and submodules are not supported yet |
 | Platform verification | Runtime verified on macOS arm64; cross-compilation passed for macOS amd64, Linux amd64, and Windows amd64; native Linux / Windows behavior still needs verification |
 
