@@ -144,7 +144,12 @@ func (e *Engine) Publish(ctx context.Context, deps []config.Dependency, full, fo
 			return err
 		}
 		// Validate local symlinks and file types before touching the index.
-		if err = copyAsset(source, filepath.Join(validation, d.Name), d.MirrorDir, nil); err != nil {
+		// Names are metadata, never paths into the validation workspace.
+		destination, err := os.MkdirTemp(validation, "asset-")
+		if err != nil {
+			return err
+		}
+		if err = copyAsset(source, destination, d.MirrorDir, nil); err != nil {
 			return err
 		}
 		entries = append(entries, entry)
