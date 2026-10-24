@@ -30,7 +30,7 @@ $ orbit check
 
 ## How it works
 
-<img src="assets/readme/asset-flow.svg" width="100%" alt="Orbit asset flow: sync fetches upstream Git into a shared cache; link maps cached directories to developer tools; mirror aggregates the cache into a local repository and pushes to a personal Git remote.">
+<img src="assets/readme/asset-flow.svg" width="640" alt="Orbit asset flow: sync fetches upstream Git into a shared cache; link maps cached directories to developer tools; mirror aggregates the cache into a local repository and pushes to a personal Git remote.">
 
 `sync` updates the cache, `link` creates or removes links according to the configuration, and `mirror` commits and pushes. Run each command independently. The personal mirror never writes back to upstream.
 

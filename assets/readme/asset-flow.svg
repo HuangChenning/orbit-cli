@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="384" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
   <title id="title">Orbit: one shared cache, two independent outputs</title>
   <desc id="desc">Sync fetches upstream Git into a shared local cache. Link maps selected directories to developer tools with symlinks. Mirror copies cached assets into a local repository and pushes to a personal Git remote. Neither output writes back to upstream.</desc>
   <!-- Runtime overview. Source: internal/engine/{cache,link,mirror}.go. -->

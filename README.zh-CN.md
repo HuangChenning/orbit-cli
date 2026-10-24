@@ -30,7 +30,7 @@ $ orbit check
 
 ## 工作原理
 
-<img src="assets/readme/asset-flow.svg" width="100%" alt="Orbit 资产流：上游 Git 经 sync 写入共享缓存；link 将缓存链接到工具目录；mirror 将缓存汇聚到本地镜像，再 push 到个人 Git 远端。">
+<img src="assets/readme/asset-flow.svg" width="640" alt="Orbit 资产流：上游 Git 经 sync 写入共享缓存；link 将缓存链接到工具目录；mirror 将缓存汇聚到本地镜像，再 push 到个人 Git 远端。">
 
 `sync` 只更新缓存，`link` 按配置建立或移除链接，`mirror` 才会提交并推送。三个操作独立执行；个人镜像不回写上游。
 
