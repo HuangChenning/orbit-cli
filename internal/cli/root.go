@@ -102,7 +102,7 @@ func Execute() error {
 		return e.Sync(cmd.Context(), d)
 	}})
 	var linkForce bool
-	link := &cobra.Command{Use: "link", Short: "Link enabled assets into global targets", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+	link := &cobra.Command{Use: "link", Short: "Reconcile global targets with dependency link switches", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		e, d, err := load(false)
 		if err != nil {
 			return err

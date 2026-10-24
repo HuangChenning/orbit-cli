@@ -18,6 +18,14 @@ func (e *Engine) Link(ctx context.Context, deps []config.Dependency, force bool)
 	var errs []error
 	for _, d := range deps {
 		if !d.Link {
+			source := filepath.Join(e.cache(d), filepath.FromSlash(d.Subdir))
+			// Resolve the configured destinations even though linking is disabled.
+			d.Link = true
+			for _, target := range e.Config.Targets(d) {
+				if err := removeMatchingLink(source, target); err != nil {
+					errs = append(errs, err)
+				}
+			}
 			continue
 		}
 		l, err := e.lock(d, false)
@@ -38,6 +46,34 @@ func (e *Engine) Link(ctx context.Context, deps []config.Dependency, force bool)
 		l.Unlock()
 	}
 	return errors.Join(errs...)
+}
+
+func removeMatchingLink(source, target string) error {
+	if err := config.NoSymlinks(filepath.Dir(target)); err != nil {
+		return err
+	}
+	info, err := os.Lstat(target)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return nil
+	}
+	old, err := os.Readlink(target)
+	if err != nil {
+		return err
+	}
+	if !filepath.IsAbs(old) {
+		old = filepath.Join(filepath.Dir(target), old)
+	}
+	// Compare paths without following them, so dangling links can also be removed.
+	if filepath.Clean(old) != filepath.Clean(source) {
+		return nil
+	}
+	return os.Remove(target)
 }
 
 func makeLink(source, target string, force bool) error {
