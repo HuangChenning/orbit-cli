@@ -119,7 +119,7 @@ Cleanup preserves assembled assets in `~/.orbit/repo` and links pointing there. 
 
 ## Directories and configuration
 
-In the source repository, Go code lives in `src/main.go` and `src/internal/`. The root `internal/skills/` directory is reserved for project skills. `go.mod` and `go.sum` remain at the repository root; run build commands from there, using `go build -o orbit ./src` or `go run ./src --help`.
+In the source repository, Go code lives in `src/main.go` and `src/internal/`. You can keep project skills locally under the root `internal/skills/` directory; the entire root `internal/` directory is ignored by Git. `go.mod` and `go.sum` remain at the repository root; run build commands from there, using `go build -o orbit ./src` or `go run ./src --help`.
 
 | Default path | Purpose |
 | --- | --- |

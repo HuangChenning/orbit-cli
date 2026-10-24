@@ -119,7 +119,7 @@ orbit clean
 
 ## 目录与配置
 
-源码仓库中的 Go 代码位于 `src/main.go` 和 `src/internal/`，根目录的 `internal/skills/` 预留给项目技能。`go.mod` 和 `go.sum` 保留在仓库根目录；在根目录使用 `go build -o orbit ./src` 构建，或用 `go run ./src --help` 运行。
+源码仓库中的 Go 代码位于 `src/main.go` 和 `src/internal/`，项目技能可在本机放入根目录的 `internal/skills/`；整个根目录 `internal/` 均由 Git 忽略。`go.mod` 和 `go.sum` 保留在仓库根目录；在根目录使用 `go build -o orbit ./src` 构建，或用 `go run ./src --help` 运行。
 
 | 默认路径 | 用途 |
 | --- | --- |

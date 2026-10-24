@@ -2,6 +2,7 @@
 /CLAUDE.md
 /docs/
 /TODO.md
+/internal/
 __pycache__/
 .DS_Store
 /orbit.yaml.*.bak
