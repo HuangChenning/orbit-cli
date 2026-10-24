@@ -4,7 +4,7 @@
 
 **一份 YAML，把 Git 资产分发到你的开发工具。**
 
-Go 1.20+ · 系统 Git · 声明式配置
+Go 1.26 / 1.27 · 系统 Git · 声明式配置
 
 [快速开始](#快速开始) · [命令参考](#命令参考) · [提交推送到 GitHub](#提交推送到-github) · [Axon 迁移检查](#从-axon-校验与修复)
 
@@ -37,7 +37,7 @@ $ orbit check
 
 ## 快速开始
 
-先确保 **Git 在 PATH 中**，并安装 **Go 1.20+**。macOS / Linux 从源码构建：
+先确保 **Git 在 PATH 中**。源码构建需要 Go 1.26 或 1.27，CI 固定验证 1.26.10 和 1.27.3。macOS / Linux 从源码构建：
 
 ```sh
 git clone https://github.com/HuangChenning/orbit-cli.git
@@ -184,6 +184,44 @@ orbit check --axon-config "$HOME/.axon/axon.yaml" \
 
 在上述命令中增加 `--repo "$HOME/.orbit/repo"` 可比较本地仓库的文件清单，报告未配置的仓内资产；它不验证文件字节或版本，也不猜测未知资产的来源。
 
+## 候选版本与二进制安装
+
+首个稳定候选版本为 **v1.0.0**，尚未发布稳定版。可从成功的 [Stable release checks 工作流](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml) 下载完整候选产物，供审核使用；正式发布仍需单独批准，并验证合并后的提交。
+
+| 平台 | 压缩包 |
+| --- | --- |
+| macOS Apple Silicon | `orbit_1.0.0_darwin_arm64.tar.gz` |
+| macOS Intel | `orbit_1.0.0_darwin_amd64.tar.gz` |
+| Linux amd64 | `orbit_1.0.0_linux_amd64.tar.gz` |
+| Windows amd64 | `orbit_1.0.0_windows_amd64.zip` |
+
+`CANDIDATE.json` 记录源码 SHA、工具链、原生运行环境及构建参数。解压前对照 `SHA256SUMS` 校验压缩包：macOS 使用 `shasum -a 256 <压缩包>`，Linux 使用 `sha256sum <压缩包>`，PowerShell 使用 `Get-FileHash <压缩包> -Algorithm SHA256`，将完整哈希与对应文件名的条目比较。
+
+macOS / Linux 解压后，将 `orbit` 放入 `~/.orbit/bin` 并加入 PATH，再运行 `orbit --version` 和 `orbit --help`。Windows 使用 `Expand-Archive` 解压，将 `orbit.exe` 放入 `$HOME\.orbit\bin`，加入用户 PATH 后在新终端执行同样的检查。二进制用户仅需系统 Git，无需安装 Go 或 Python。
+
+**安装包未签名**：没有 Apple Developer ID 签名、公证或 Windows Authenticode 签名。若 macOS 阻止运行，先核对来源及校验值，再在“系统设置 → 隐私与安全性”中为该程序单独批准；保持系统全局安全保护开启。Windows 创建软链接需要开发者模式或管理员终端，权限不足时 Orbit 会明确报错。Go 1.27 构建的包要求 macOS 13 或更新版本，但该矩阵未测试 macOS 13/14。
+
+`orbit --version` 无需配置或 Git 连接：源码构建显示 `dev`，候选包显示版本、完整提交 SHA、UTC 构建时间及 Go 版本。时间采用源码提交时间以便重复构建。安装包仅含程序、MIT 许可证、中英文 README 及变更记录。
+
+[Go 官方运行要求](https://go.dev/wiki/MinimumRequirements)还包括 Linux 内核 3.2+、Windows 10+ / Windows Server 2016+。这些是工具链下限，Orbit 的原生验收范围仅限上表 runner 系统；不支持 WSL 1。
+
+若从早期未发布版本升级，请从 `./src` 重新构建，将 `orbit_repo.local_path` 设置为 `~/.orbit/repo`，使用 `orbit vendor sync` 下载、`orbit sync` 提交推送。运行 `orbit link` 迁移匹配的旧缓存链接，再用 `orbit clean` 清理选中的受管理缓存；其他已有路径需手工检查。
+
+## 开发检查
+
+安装 Go、Python 3.12 和 Git 后执行：
+
+```sh
+python3 -m pip install -r tests/requirements.txt
+go build -o orbit ./src
+go vet ./...
+go test -race ./...
+python3 -m unittest discover -s tests/acceptance -v
+python3 -m unittest discover -s tests -p test_synthetic_config.py -v
+```
+
+Windows 构建文件名使用 `orbit.exe`。通过 `ORBIT_BIN` 可指定其他程序；CI 在 Go 1.27.3 中测试实际解压的候选程序，在 Go 1.26.10 中测试开发构建。测试仅使用临时本地仓库及合成资产，不依赖个人 Axon 清单。构建候选包时，在干净且已提交的源码目录中使用原生 Go 1.27.3 运行 `python3 tools/release.py build --version v1.0.0`，产物位于 `dist/`，不会发布版本。
+
 ## 限制与行为边界
 
 | 场景 | 行为 |
@@ -194,6 +232,6 @@ orbit check --axon-config "$HOME/.axon/axon.yaml" \
 | 个人仓库历史分叉 | 默认普通推送，不自动 merge/rebase；`sync --force` 需要确认，非交互时须显式使用 `--force --yes` |
 | 缓存清理 | `clean --yes` 确认删除选中的受管理缓存，保留组装后的资产及链接；单独 `--yes` 不授予强推权限 |
 | Git 扩展资产 | 暂不支持 Git LFS、submodule |
-| 平台验证 | macOS arm64 已运行验证；macOS amd64、Linux amd64、Windows amd64 已通过交叉编译，Linux / Windows 原生行为仍待验证 |
+| 平台验证 | PR 工作流在 macOS 15 arm64 / amd64、Ubuntu 24.04 amd64、Windows Server 2022 amd64 上执行原生功能测试；安装前查看对应候选包的运行结果 |
 
 命令成功退出 `0`，校验差异或操作失败退出非零。完整选项见 `orbit --help` 和 `orbit <command> --help`。

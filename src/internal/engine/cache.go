@@ -42,7 +42,7 @@ func (e *Engine) git(ctx context.Context, dir string, args ...string) (string, e
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	base := []string{"--literal-pathspecs", "-c", "core.autocrlf=false", "-C", dir}
+	base := []string{"--literal-pathspecs", "-c", "core.autocrlf=false", "-c", "core.symlinks=true", "-C", dir}
 	cmd := exec.CommandContext(ctx, "git", append(base, args...)...)
 	configureProcess(cmd)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_LFS_SKIP_SMUDGE=1")

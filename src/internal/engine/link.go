@@ -127,10 +127,7 @@ func makeLink(source, target string, force bool) error {
 	os.Remove(tmp)
 	defer os.Remove(tmp)
 	if err = os.Symlink(source, tmp); err != nil {
-		if runtime.GOOS == "windows" {
-			return fmt.Errorf("symlink failed; enable Windows Developer Mode or run as administrator: %w", err)
-		}
-		return err
+		return symlinkError(err)
 	}
 	if info != nil && runtime.GOOS == "windows" {
 		if err = os.Remove(target); err != nil {
@@ -138,6 +135,13 @@ func makeLink(source, target string, force bool) error {
 		}
 	}
 	return os.Rename(tmp, target)
+}
+
+func symlinkError(err error) error {
+	if runtime.GOOS == "windows" {
+		return fmt.Errorf("symlink failed; enable Windows Developer Mode or run as administrator: %w", err)
+	}
+	return err
 }
 
 func (e *Engine) Clean(ctx context.Context, deps []config.Dependency) error {

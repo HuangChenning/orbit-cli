@@ -434,17 +434,30 @@ func (e *Engine) prepareRepository(ctx context.Context) error {
 		if err = os.MkdirAll(filepath.Dir(p), 0755); err != nil {
 			return err
 		}
-		if _, err = e.git(ctx, filepath.Dir(p), "clone", "--no-checkout", "--", r.Remote, p); err != nil {
+		stage, err := os.MkdirTemp(filepath.Dir(p), "."+filepath.Base(p)+".orbit-clone-")
+		if err != nil {
 			return err
 		}
-		if _, err = e.git(ctx, p, "show-ref", "--verify", "refs/remotes/origin/"+r.Branch); err == nil {
-			if _, err = e.git(ctx, p, "checkout", "-B", r.Branch, "refs/remotes/origin/"+r.Branch); err != nil {
+		defer os.RemoveAll(stage)
+		if _, err = e.git(ctx, filepath.Dir(p), "clone", "--no-checkout", "--", r.Remote, stage); err != nil {
+			return err
+		}
+		if _, err = e.git(ctx, stage, "show-ref", "--verify", "refs/remotes/origin/"+r.Branch); err == nil {
+			if _, err = e.git(ctx, stage, "checkout", "-B", r.Branch, "refs/remotes/origin/"+r.Branch); err != nil {
 				return err
 			}
 		} else {
-			if _, err = e.git(ctx, p, "symbolic-ref", "HEAD", "refs/heads/"+r.Branch); err != nil {
+			if _, err = e.git(ctx, stage, "symbolic-ref", "HEAD", "refs/heads/"+r.Branch); err != nil {
 				return err
 			}
+		}
+		if _, err = os.Lstat(p); err == nil {
+			return fmt.Errorf("repository destination appeared during initialization; refusing overwrite")
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		if err = os.Rename(stage, p); err != nil {
+			return err
 		}
 	} else if err != nil {
 		return err

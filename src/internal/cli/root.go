@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -31,6 +32,8 @@ func Execute() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	root := &cobra.Command{Use: "orbit", Short: "Download, link and publish Git-backed assets", SilenceUsage: true, SilenceErrors: true}
+	root.Version = Version
+	root.SetVersionTemplate(fmt.Sprintf("orbit {{.Version}}\ncommit: %s\nbuilt: %s\ngo: %s\n", Commit, BuildTime, runtime.Version()))
 	var explicit string
 	var labels []string
 	var jobs int
@@ -67,6 +70,9 @@ func Execute() error {
 	}
 	var initPath string
 	init := &cobra.Command{Use: "init", Short: "Create orbit.yaml without overwriting an existing file", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		if initPath == "" {
+			return fmt.Errorf("home directory unavailable; use init --path")
+		}
 		p := filepath.Join(initPath, "orbit.yaml")
 		if err := config.NoSymlinks(filepath.Dir(p)); err != nil {
 			return err
@@ -90,10 +96,11 @@ func Execute() error {
 		return nil
 	}}
 	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
+	defaultInitPath := ""
+	if err == nil {
+		defaultInitPath = filepath.Join(home, ".orbit")
 	}
-	init.Flags().StringVarP(&initPath, "path", "p", filepath.Join(home, ".orbit"), "directory for orbit.yaml")
+	init.Flags().StringVarP(&initPath, "path", "p", defaultInitPath, "directory for orbit.yaml")
 	root.AddCommand(init)
 	vendor := &cobra.Command{Use: "vendor", Short: "Manage upstream assets"}
 	vendor.AddCommand(&cobra.Command{Use: "sync", Short: "Download upstream assets into the local Orbit repository", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
