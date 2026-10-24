@@ -1,0 +1,15 @@
+/AGENTS.md
+/CLAUDE.md
+/docs/
+/TODO.md
+__pycache__/
+.DS_Store
+/orbit.yaml.*.bak
+/tests/
+/testdata/
+/tools/check_config.py
+/orbit.yaml
+/.orbitignore
+*_test.go
+/orbit
+/orbit.exe
