@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/HuangChenning/orbit-cli/internal/config"
+	"github.com/HuangChenning/orbit-cli/src/internal/config"
 	"gopkg.in/yaml.v3"
 )
 

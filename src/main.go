@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/HuangChenning/orbit-cli/internal/cli"
+	"github.com/HuangChenning/orbit-cli/src/internal/cli"
 	"os"
 )
 

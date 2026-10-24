@@ -43,7 +43,7 @@ Ensure **Git is on your PATH** and **Go 1.20+** is installed. Build from source 
 git clone https://github.com/HuangChenning/orbit-cli.git
 cd orbit-cli
 mkdir -p "$HOME/.orbit/bin"
-go build -o "$HOME/.orbit/bin/orbit" .
+go build -o "$HOME/.orbit/bin/orbit" ./src
 export PATH="$HOME/.orbit/bin:$PATH"
 orbit init
 ```
@@ -118,6 +118,8 @@ The command lists the selected dependencies and asks for confirmation. Use `orbi
 Cleanup preserves assembled assets in `~/.orbit/repo` and links pointing there. `orbit sync` can still commit and push those assets without a cache; the next `orbit vendor sync` downloads the removed caches again and refreshes the selected local assets.
 
 ## Directories and configuration
+
+In the source repository, Go code lives in `src/main.go` and `src/internal/`. The root `internal/skills/` directory is reserved for project skills. `go.mod` and `go.sum` remain at the repository root; run build commands from there, using `go build -o orbit ./src` or `go run ./src --help`.
 
 | Default path | Purpose |
 | --- | --- |

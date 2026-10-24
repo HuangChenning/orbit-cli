@@ -34,4 +34,4 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Check CLI startup
-        run: go run . --help
+        run: go run ./src --help

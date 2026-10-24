@@ -43,7 +43,7 @@ $ orbit check
 git clone https://github.com/HuangChenning/orbit-cli.git
 cd orbit-cli
 mkdir -p "$HOME/.orbit/bin"
-go build -o "$HOME/.orbit/bin/orbit" .
+go build -o "$HOME/.orbit/bin/orbit" ./src
 export PATH="$HOME/.orbit/bin:$PATH"
 orbit init
 ```
@@ -118,6 +118,8 @@ orbit clean
 清理会保留 `~/.orbit/repo` 中组装后的资产及指向它们的链接。`orbit sync` 仍可在没有缓存的情况下提交并推送这些资产；下次执行 `orbit vendor sync` 时，会重新下载已清理的缓存，并更新选中的本地资产。
 
 ## 目录与配置
+
+源码仓库中的 Go 代码位于 `src/main.go` 和 `src/internal/`，根目录的 `internal/skills/` 预留给项目技能。`go.mod` 和 `go.sum` 保留在仓库根目录；在根目录使用 `go build -o orbit ./src` 构建，或用 `go run ./src --help` 运行。
 
 | 默认路径 | 用途 |
 | --- | --- |
