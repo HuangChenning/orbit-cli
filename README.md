@@ -1,18 +1,20 @@
 # Orbit CLI
 
-**一份 YAML，把 Git 资产分发到你的开发工具。**
+**One YAML file to distribute Git-backed assets across your developer tools.**
 
-Go 1.20+ · 系统 Git · 声明式配置
+English · [简体中文](README.zh-CN.md)
 
-[快速开始](#快速开始) · [命令参考](#命令参考) · [镜像到个人仓库](#镜像到个人仓库) · [Axon 迁移检查](#从-axon-校验与修复)
+Go 1.20+ · System Git · Declarative configuration
 
-## 简介
+[Quick start](#quick-start) · [Commands](#commands) · [Personal mirror](#mirror-to-a-personal-repository) · [Axon migration checks](#check-and-repair-an-axon-migration)
 
-Orbit 面向在多个工具和项目之间复用 **skills、workflows、scripts、commands** 的开发者：从上游同步到共享缓存，用软链接分发选中的目录，也可聚合后推送到个人 Git 仓库。
+## Overview
 
-## 运行示例
+Orbit helps developers reuse **skills, workflows, scripts, and commands** across tools and projects. Sync upstream repositories into a shared cache, distribute selected directories through symlinks, and optionally aggregate them into a personal Git repository.
 
-以下输出来自隔离的本地 Git 示例；两个工具的 `skill-creator` 链接最终指向同一份缓存。
+## Example output
+
+This output comes from an isolated local Git example. Two tools' `skill-creator` links resolve to the same cached directory.
 
 ```console
 $ orbit sync
@@ -26,15 +28,15 @@ $ orbit check
 }
 ```
 
-## 工作原理
+## How it works
 
-<img src="assets/readme/asset-flow.svg" width="100%" alt="Orbit 资产流：上游 Git 经 sync 写入共享缓存；link 将缓存链接到工具目录；mirror 将缓存汇聚到本地镜像，再 push 到个人 Git 远端。">
+<img src="assets/readme/asset-flow.svg" width="100%" alt="Orbit asset flow: sync fetches upstream Git into a shared cache; link maps cached directories to developer tools; mirror aggregates the cache into a local repository and pushes to a personal Git remote.">
 
-`sync` 只更新缓存，`link` 按配置建立或移除链接，`mirror` 才会提交并推送。三个操作独立执行；个人镜像不回写上游。
+`sync` updates the cache, `link` creates or removes links according to the configuration, and `mirror` commits and pushes. Run each command independently. The personal mirror never writes back to upstream.
 
-## 快速开始
+## Quick start
 
-先确保 **Git 在 PATH 中**，并安装 **Go 1.20+**。macOS / Linux 从源码构建：
+Ensure **Git is on your PATH** and **Go 1.20+** is installed. Build from source on macOS / Linux:
 
 ```sh
 git clone https://github.com/HuangChenning/orbit-cli.git
@@ -45,9 +47,9 @@ export PATH="$HOME/.orbit/bin:$PATH"
 orbit init
 ```
 
-将 PATH 设置加入 shell 启动文件以持久生效。`orbit init` 默认创建 `~/.orbit/orbit.yaml`，已有配置不会被覆盖。
+Add the PATH setting to your shell startup file to make it persistent. By default, `orbit init` creates `~/.orbit/orbit.yaml` without overwriting an existing configuration.
 
-编辑该文件，声明第一个依赖：
+Edit that file to declare your first dependency:
 
 ```yaml
 version: "1.0"
@@ -68,7 +70,7 @@ dependencies:
     labels: ["skills"]
 ```
 
-然后执行：
+Then run:
 
 ```sh
 orbit sync
@@ -76,50 +78,50 @@ orbit link
 orbit check
 ```
 
-上例将资产链接到 `~/.claude/skills/skill-creator` 和 `~/.codex/skills/skill-creator`。若目标已被真实文件、目录或父目录软链接占用，先手工处理冲突。
+This example links the asset to `~/.claude/skills/skill-creator` and `~/.codex/skills/skill-creator`. If a real file, directory, or symlinked parent directory occupies a destination, resolve the conflict manually first.
 
-## 命令参考
+## Commands
 
-| 命令 | 作用 | 常用选项 |
+| Command | Purpose | Common options |
 | --- | --- | --- |
-| `orbit init` | 生成配置，不覆盖已有文件 | `--path <dir>` |
-| `orbit sync` | 从上游更新缓存 | `--label <label>`、`--jobs <n>` |
-| `orbit link` | 按 `link` 开关建立或移除匹配的链接 | `--label <label>`、`--force` |
-| `orbit mirror` | 聚合、提交并推送个人镜像 | `--label <label>`、`--message <text>` |
-| `orbit check` | 检查缓存与启用的链接 | 显式 Axon 输入下支持 `--fix` |
-| `orbit clean` | 预览并确认清理选中的受管理缓存 | `--label <label>`、`--yes` |
+| `orbit init` | Generate configuration without overwriting an existing file | `--path <dir>` |
+| `orbit sync` | Update the cache from upstream | `--label <label>`, `--jobs <n>` |
+| `orbit link` | Create or remove matching links according to the `link` switch | `--label <label>`, `--force` |
+| `orbit mirror` | Aggregate, commit, and push a personal mirror | `--label <label>`, `--message <text>` |
+| `orbit check` | Check the cache and enabled links | `--fix` with explicit Axon inputs |
+| `orbit clean` | Preview and confirm deletion of selected managed caches | `--label <label>`, `--yes` |
 
-标签区分大小写；重复 `--label` 按 **OR** 匹配，零匹配报错。同步默认最多 4 个并发 Git 操作。Git 操作默认超时两分钟，可用 `--timeout` 调整。
+Labels are case-sensitive. Repeated `--label` flags use **OR** matching; no matches is an error. Sync runs at most 4 concurrent Git operations by default. Each Git operation has a two-minute timeout, adjustable with `--timeout`.
 
 ```sh
 orbit sync --label skills --label workflows --jobs 4
 ```
 
-## 目录与配置
+## Directories and configuration
 
-| 默认路径 | 用途 |
+| Default path | Purpose |
 | --- | --- |
-| `~/.orbit/bin/orbit` | 按上面的安装方式构建的程序 |
-| `~/.orbit/orbit.yaml` | 全局配置 |
-| `~/.orbit/cache` | 按来源和版本共享的 Git 缓存 |
-| `~/.orbit/repo` | 首次镜像时创建的本地仓库 |
+| `~/.orbit/bin/orbit` | Binary built by the installation steps above |
+| `~/.orbit/orbit.yaml` | Global configuration |
+| `~/.orbit/cache` | Git cache shared by source and version |
+| `~/.orbit/repo` | Local repository created on the first mirror operation |
 
-配置查找优先级：`--config <file>` → 最近的项目或父目录 `orbit.yaml` → 全局配置。相对路径以配置文件所在目录为基准，支持 `~/...`。
+Configuration lookup order: `--config <file>` → nearest `orbit.yaml` in the project or its parent directories → global configuration. Relative paths resolve from the configuration file's directory. Paths starting with `~/` are supported.
 
-`link_targets` 在全局按类别声明工具根目录；依赖只设置 `link` 开关。`mirror_dir` 的首段选择类别，其余路径拼接到各工具根目录。
+Declare tool root directories once in the global `link_targets`, grouped by category. Each dependency uses a `link` switch. The first segment of `mirror_dir` selects the category; the remaining path is appended to each tool root.
 
-将已有依赖的 `link` 改为 `false` 后，再执行 `orbit link`，会移除当前目标路径上仍指向该依赖缓存子目录的软链接，包括失效链接；不会删除缓存内容、真实文件、目录或指向其他位置的链接。清理无需缓存存在，仍受 `--label` 限制。若同时更改来源、版本、`subdir`、`mirror_dir` 或全局目标，旧路径无法按当前配置匹配，需手工处理。
+After changing an existing dependency's `link` to `false`, run `orbit link` again to remove symlinks at the current destinations that still point to that dependency's cached subdirectory, including dangling links. Cache contents, real files, directories, and links pointing elsewhere are preserved. Cleanup works even when the cache is missing and respects `--label`. If you also change the source, version, `subdir`, `mirror_dir`, or global targets, old links that no longer match the current configuration must be handled manually.
 
-| 依赖字段 | 默认或省略时的行为 |
+| Dependency field | Default or behavior when omitted |
 | --- | --- |
-| `name`、`source`、`version` | 必填；名称不能重复 |
-| `subdir` | 默认 `.`，使用完整仓库 |
-| `link` | 默认 `false`；执行 `orbit link` 时清理匹配的旧链接，仍可同步和镜像 |
-| `mirror_dir` | 省略后只同步，不参与镜像；启用链接时必须填写 |
+| `name`, `source`, `version` | Required; names must be unique |
+| `subdir` | Defaults to `.`, using the whole repository |
+| `link` | Defaults to `false`; `orbit link` removes matching old links; sync and mirror remain available |
+| `mirror_dir` | If omitted, sync only; required when linking is enabled |
 
-## 镜像到个人仓库
+## Mirror to a personal repository
 
-在同一配置中加入 `orbit_repo`，将 `YOUR_ACCOUNT` 替换为自己的账号，并确保远端仓库已创建、Git 凭证可用：
+Add `orbit_repo` to the same configuration. Replace `YOUR_ACCOUNT` with your account, create the remote repository, and ensure your Git credentials work:
 
 ```yaml
 orbit_repo:
@@ -128,47 +130,47 @@ orbit_repo:
   local_path: "~/.orbit/repo"
 ```
 
-`local_path` 可省略，默认即为 `~/.orbit/repo`。完成同步后运行：
+You can omit `local_path`; it defaults to `~/.orbit/repo`. After syncing, run:
 
 ```sh
 orbit mirror
 ```
 
-- 要求选中的缓存干净且已同步；任何一项预检失败都不发布部分快照。
-- 排除各层 `.git`，保留内部相对链接，拒绝绝对或越界链接。配置旁的 `.orbitignore` 使用 Gitignore 规则；`.env` 不会被隐式排除。
-- `.orbit-manifest.yaml` 记录来源和实际提交。标签镜像保留未选中资产，全量镜像只清除此前管理的陈旧资产；首次接管保留 README 等未管理内容。
-- 内容未变时不创建空提交。推送失败保留本地提交，下次继续推送；Git 属性或 filter 转换资产字节时会报错并回滚。
+- Selected caches must be clean and synced. If any preflight check fails, no partial snapshot is published.
+- Nested `.git` entries are excluded. Internal relative symlinks are preserved; absolute or escaping links are rejected. An `.orbitignore` beside the configuration uses Gitignore rules. `.env` is not implicitly excluded.
+- `.orbit-manifest.yaml` records sources and resolved commits. A label-filtered mirror preserves unselected assets. A full mirror removes only stale assets previously managed by Orbit; the first takeover preserves unmanaged content such as a README.
+- Unchanged content produces no empty commit. A failed push keeps the local commit for the next attempt. Git attributes or filters that transform asset bytes cause an error and rollback.
 
-## 从 Axon 校验与修复
+## Check and repair an Axon migration
 
-日常命令以 Orbit 配置为准。提供显式 Axon 输入后，可核对 vendor 声明及 Hub 已提交的四类资产，发现缺失依赖、工具映射、来源冲突和未覆盖文件：
+Everyday commands use the Orbit configuration. With explicit Axon inputs, check vendor declarations and the Hub's committed assets in all four categories for missing dependencies, tool mappings, source conflicts, and uncovered files:
 
 ```sh
 orbit check --axon-config "$HOME/.axon/axon.yaml" \
   --vendors "$HOME/.axon/repo/axon.vendors.yaml"
 ```
 
-确认报告后，使用 `--fix` 补齐已知来源的遗漏并去重：
+Review the report, then use `--fix` to add omissions with known sources and deduplicate entries:
 
 ```sh
 orbit check --axon-config "$HOME/.axon/axon.yaml" \
   --vendors "$HOME/.axon/repo/axon.vendors.yaml" --fix
 ```
 
-修复前保存原始字节备份，报告包含变更项；YAML 注释与格式会规范化。自定义依赖、标签和 `link: false` 会保留，来源冲突不自动覆盖，原 Axon 文件不改写。
+Repair saves a byte-for-byte backup first and reports its changes. YAML comments and formatting are normalized. Custom dependencies, labels, and `link: false` settings are preserved. Source conflicts are not automatically overwritten, and the original Axon files are not modified.
 
-在上述命令中增加 `--repo "$HOME/.orbit/repo"` 可比较镜像文件清单，报告未配置的仓内资产；它不验证文件字节或版本，也不猜测未知资产的来源。
+Add `--repo "$HOME/.orbit/repo"` to either command to compare the mirror's file inventory and report unconfigured assets. This checks neither file bytes nor versions and does not guess unknown assets' sources.
 
-## 限制与行为边界
+## Limitations and behavior
 
-| 场景 | 行为 |
+| Scenario | Behavior |
 | --- | --- |
-| 缓存有本地改动 | Sync 使用 fetch、reset --hard、clean -ffdx 丢弃改动，包括 ignored 文件；通过链接修改也会影响共享缓存 |
-| 版本选择 | branch 跟随上游，完整 SHA 固定提交；branch/tag 同名或已缓存 tag 变化时拒绝同步 |
-| 链接冲突 | `link --force` 仅替换错误的软链接，真实文件、目录及父目录软链接须手工处理 |
-| 镜像历史分叉 | 默认普通推送，不自动 merge/rebase；`mirror --force` 需要确认，非交互时须显式使用 `--force --yes` |
-| 非交互清理 | `clean --yes` 确认删除选中的受管理缓存；单独 `--yes` 不授予镜像强推权限 |
-| Git 扩展资产 | 暂不支持 Git LFS、submodule |
-| 平台验证 | macOS arm64 已运行验证；macOS amd64、Linux amd64、Windows amd64 已通过交叉编译，Linux / Windows 原生行为仍待验证 |
+| Local cache edits | Sync uses fetch, reset --hard, and clean -ffdx to discard changes, including ignored files; edits through symlinks also affect the shared cache |
+| Version selection | Branches track upstream; a full SHA pins a commit; ambiguous branch/tag names or changed cached tags are rejected |
+| Link conflicts | `link --force` replaces incorrect symlinks only; real files, directories, and symlinked parents require manual handling |
+| Diverged mirror history | Normal push by default, without automatic merge/rebase; `mirror --force` requires confirmation, or explicit `--force --yes` in non-interactive use |
+| Non-interactive cleanup | `clean --yes` confirms deletion of selected managed caches; `--yes` alone does not authorize a force push |
+| Git extensions | Git LFS and submodules are not supported yet |
+| Platform verification | Runtime verified on macOS arm64; cross-compilation passed for macOS amd64, Linux amd64, and Windows amd64; native Linux / Windows behavior still needs verification |
 
-命令成功退出 `0`，校验差异或操作失败退出非零。完整选项见 `orbit --help` 和 `orbit <command> --help`。
+Commands exit with `0` on success and a nonzero status on validation differences or operational failure. See `orbit --help` and `orbit <command> --help` for all options.
