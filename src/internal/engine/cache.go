@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/HuangChenning/orbit-cli/src/internal/config"
+	"github.com/HuangChenning/orbit-cli/v2/src/internal/config"
 	"github.com/gofrs/flock"
 )
 

@@ -1,4 +1,4 @@
-module github.com/HuangChenning/orbit-cli
+module github.com/HuangChenning/orbit-cli/v2
 
 go 1.26.0
 

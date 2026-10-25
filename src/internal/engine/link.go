@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/HuangChenning/orbit-cli/src/internal/config"
+	"github.com/HuangChenning/orbit-cli/v2/src/internal/config"
 )
 
 func (e *Engine) Link(ctx context.Context, deps []config.Dependency, force bool) error {

@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/HuangChenning/orbit-cli/src/internal/config"
-	"github.com/HuangChenning/orbit-cli/src/internal/engine"
+	"github.com/HuangChenning/orbit-cli/v2/src/internal/config"
+	"github.com/HuangChenning/orbit-cli/v2/src/internal/engine"
 	"github.com/spf13/cobra"
 )
 

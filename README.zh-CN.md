@@ -304,7 +304,7 @@ orbit --config ./orbit.yaml link
 orbit --config ./orbit.yaml sync
 ```
 
-若使用统一全局配置，请自行核对后将选定配置复制至 `~/.orbit/orbit.yaml`。相对路径以配置所在目录为基准，移动配置时需相应调整。升级程序本身不会迁移配置、下载或删除资产，也不会改变已有软链接。YAML 格式版本仍为 `version: "1.0"`。`link` 和 `sync` 现在会显示进度与操作汇总；脚本应通过退出码判断成功，通过 `check --duplicates` 的 JSON 获取重复检查结果。
+若使用统一全局配置，请自行核对后将选定配置复制至 `~/.orbit/orbit.yaml`。相对路径以配置所在目录为基准，移动配置时需相应调整。升级程序本身不会迁移配置、下载或删除资产，也不会改变已有软链接。YAML 格式版本仍为 `version: "1.0"`，Go 模块路径改为 `github.com/HuangChenning/orbit-cli/v2`。`link` 和 `sync` 现在会显示进度与操作汇总；脚本应通过退出码判断成功，通过 `check --duplicates` 的 JSON 获取重复检查结果。
 
 若从早期未发布版本升级，请从 `./src` 重新构建，将 `orbit_repo.local_path` 设置为 `~/.orbit/repo`，使用 `orbit vendor sync` 下载、`orbit sync` 提交推送。运行 `orbit link` 迁移匹配的旧缓存链接，再用 `orbit clean` 清理选中的受管理缓存；其他已有路径需手工检查。
 

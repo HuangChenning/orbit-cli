@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/HuangChenning/orbit-cli/src/internal/config"
+	"github.com/HuangChenning/orbit-cli/v2/src/internal/config"
 	ignore "github.com/sabhiram/go-gitignore"
 	"gopkg.in/yaml.v3"
 )

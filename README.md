@@ -304,7 +304,7 @@ orbit --config ./orbit.yaml link
 orbit --config ./orbit.yaml sync
 ```
 
-For a single global setup, review and copy your chosen configuration to `~/.orbit/orbit.yaml` yourself. Relative paths resolve beside the selected file, so adjust them if moving it. Upgrading the binary does not migrate configurations, download or delete assets, or change existing symlinks. The YAML schema remains `version: "1.0"`. `link` and `sync` now print progress and action summaries; scripts should use exit status for success and `check --duplicates` JSON for duplicate reports.
+For a single global setup, review and copy your chosen configuration to `~/.orbit/orbit.yaml` yourself. Relative paths resolve beside the selected file, so adjust them if moving it. Upgrading the binary does not migrate configurations, download or delete assets, or change existing symlinks. The YAML schema remains `version: "1.0"`. The Go module path is now `github.com/HuangChenning/orbit-cli/v2`. `link` and `sync` now print progress and action summaries; scripts should use exit status for success and `check --duplicates` JSON for duplicate reports.
 
 If upgrading an earlier unpublished checkout, rebuild from `./src`, set `orbit_repo.local_path` to `~/.orbit/repo`, use `orbit vendor sync` for downloads and `orbit sync` for pushes. Run `orbit link` to migrate matching old cache links, then `orbit clean` to remove selected owned caches. Existing unrelated paths require manual review.
 

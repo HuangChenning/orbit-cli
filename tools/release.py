@@ -59,7 +59,7 @@ def build(args):
     binary_name = "orbit.exe" if goos == "windows" else "orbit"
     binary = output / target / binary_name
     binary.parent.mkdir(parents=True, exist_ok=True)
-    package = "github.com/HuangChenning/orbit-cli/src/internal/cli"
+    package = "github.com/HuangChenning/orbit-cli/v2/src/internal/cli"
     flags = f"-X {package}.Version={args.version} -X {package}.Commit={commit} -X {package}.BuildTime={built}"
     command = ["go", "build", "-trimpath", "-buildvcs=false", "-ldflags", flags, "-o", str(binary), "./src"]
     subprocess.run(command, cwd=ROOT, env=dict(os.environ, CGO_ENABLED="0"), check=True)
