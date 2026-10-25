@@ -7,8 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
-	"github.com/HuangChenning/orbit-cli/internal/config"
+	"github.com/HuangChenning/orbit-cli/src/internal/config"
 )
 
 func (e *Engine) Link(ctx context.Context, deps []config.Dependency, force bool) error {
@@ -48,7 +49,7 @@ func (e *Engine) Link(ctx context.Context, deps []config.Dependency, force bool)
 					if !filepath.IsAbs(old) {
 						old = filepath.Join(filepath.Dir(target), old)
 					}
-					replace = replace || filepath.Clean(old) == filepath.Join(e.cache(d), filepath.FromSlash(d.Subdir))
+					replace = replace || sameNativePath(old, filepath.Join(e.cache(d), filepath.FromSlash(d.Subdir)))
 				}
 				if err = makeLink(source, target, replace); err != nil {
 					errs = append(errs, err)
@@ -59,6 +60,35 @@ func (e *Engine) Link(ctx context.Context, deps []config.Dependency, force bool)
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// sameNativePath recognizes native aliases without following symlink parents.
+// Missing suffixes are compared beneath the nearest existing directory so cleanup
+// still recognizes an owned dangling link after its cache or repo was removed.
+func sameNativePath(a, b string) bool {
+	a, b = filepath.Clean(a), filepath.Clean(b)
+	if a == b {
+		return true
+	}
+	if config.NoSymlinks(a) != nil || config.NoSymlinks(b) != nil {
+		return false
+	}
+	ai, ae := os.Stat(a)
+	bi, be := os.Stat(b)
+	if ae == nil && be == nil {
+		return os.SameFile(ai, bi)
+	}
+	if !os.IsNotExist(ae) || !os.IsNotExist(be) {
+		return false
+	}
+	an, bn := filepath.Base(a), filepath.Base(b)
+	if runtime.GOOS == "windows" {
+		an, bn = strings.ToLower(an), strings.ToLower(bn)
+	}
+	if an != bn || filepath.Dir(a) == a || filepath.Dir(b) == b {
+		return false
+	}
+	return sameNativePath(filepath.Dir(a), filepath.Dir(b))
 }
 
 func removeMatchingLink(source, target string) error {
@@ -82,8 +112,8 @@ func removeMatchingLink(source, target string) error {
 	if !filepath.IsAbs(old) {
 		old = filepath.Join(filepath.Dir(target), old)
 	}
-	// Compare paths without following them, so dangling links can also be removed.
-	if filepath.Clean(old) != filepath.Clean(source) {
+	// Native aliases and missing suffixes must also match for dangling links.
+	if !sameNativePath(old, source) {
 		return nil
 	}
 	return os.Remove(target)
@@ -105,7 +135,7 @@ func makeLink(source, target string, force bool) error {
 		if !filepath.IsAbs(old) {
 			old = filepath.Join(filepath.Dir(target), old)
 		}
-		if filepath.Clean(old) == filepath.Clean(source) {
+		if sameNativePath(old, source) {
 			return nil
 		}
 		if !force {
@@ -127,10 +157,7 @@ func makeLink(source, target string, force bool) error {
 	os.Remove(tmp)
 	defer os.Remove(tmp)
 	if err = os.Symlink(source, tmp); err != nil {
-		if runtime.GOOS == "windows" {
-			return fmt.Errorf("symlink failed; enable Windows Developer Mode or run as administrator: %w", err)
-		}
-		return err
+		return symlinkError(err)
 	}
 	if info != nil && runtime.GOOS == "windows" {
 		if err = os.Remove(target); err != nil {
@@ -138,6 +165,13 @@ func makeLink(source, target string, force bool) error {
 		}
 	}
 	return os.Rename(tmp, target)
+}
+
+func symlinkError(err error) error {
+	if runtime.GOOS == "windows" {
+		return fmt.Errorf("symlink failed; enable Windows Developer Mode or run as administrator: %w", err)
+	}
+	return err
 }
 
 func (e *Engine) Clean(ctx context.Context, deps []config.Dependency) error {

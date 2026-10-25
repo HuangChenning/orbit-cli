@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/HuangChenning/orbit-cli/internal/config"
+	"github.com/HuangChenning/orbit-cli/src/internal/config"
 	"github.com/gofrs/flock"
 	ignore "github.com/sabhiram/go-gitignore"
 	"gopkg.in/yaml.v3"
@@ -78,6 +78,10 @@ func parseManifest(b []byte) (Manifest, error) {
 }
 
 func copyAsset(source, dest, mirrorDir string, matcher *ignore.GitIgnore) error {
+	root, err := filepath.EvalSymlinks(source)
+	if err != nil {
+		return err
+	}
 	return filepath.WalkDir(source, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -127,11 +131,15 @@ func copyAsset(source, dest, mirrorDir string, matcher *ignore.GitIgnore) error 
 			if err != nil {
 				return err
 			}
-			relative, err := filepath.Rel(source, resolved)
+			relative, err := filepath.Rel(root, resolved)
 			if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 				return fmt.Errorf("symlink escapes selected asset: %s", path)
 			}
-			return os.Symlink(target, out)
+			info, err := os.Stat(resolved)
+			if err != nil {
+				return err
+			}
+			return mirrorSymlink(target, out, info.IsDir())
 		}
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("unsupported file type: %s", path)
@@ -434,17 +442,30 @@ func (e *Engine) prepareRepository(ctx context.Context) error {
 		if err = os.MkdirAll(filepath.Dir(p), 0755); err != nil {
 			return err
 		}
-		if _, err = e.git(ctx, filepath.Dir(p), "clone", "--no-checkout", "--", r.Remote, p); err != nil {
+		stage, err := os.MkdirTemp(filepath.Dir(p), "."+filepath.Base(p)+".orbit-clone-")
+		if err != nil {
 			return err
 		}
-		if _, err = e.git(ctx, p, "show-ref", "--verify", "refs/remotes/origin/"+r.Branch); err == nil {
-			if _, err = e.git(ctx, p, "checkout", "-B", r.Branch, "refs/remotes/origin/"+r.Branch); err != nil {
+		defer os.RemoveAll(stage)
+		if _, err = e.git(ctx, filepath.Dir(p), "clone", "--no-checkout", "--", r.Remote, stage); err != nil {
+			return err
+		}
+		if _, err = e.git(ctx, stage, "show-ref", "--verify", "refs/remotes/origin/"+r.Branch); err == nil {
+			if _, err = e.git(ctx, stage, "checkout", "-B", r.Branch, "refs/remotes/origin/"+r.Branch); err != nil {
 				return err
 			}
 		} else {
-			if _, err = e.git(ctx, p, "symbolic-ref", "HEAD", "refs/heads/"+r.Branch); err != nil {
+			if _, err = e.git(ctx, stage, "symbolic-ref", "HEAD", "refs/heads/"+r.Branch); err != nil {
 				return err
 			}
+		}
+		if _, err = os.Lstat(p); err == nil {
+			return fmt.Errorf("repository destination appeared during initialization; refusing overwrite")
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		if err = os.Rename(stage, p); err != nil {
+			return err
 		}
 	} else if err != nil {
 		return err

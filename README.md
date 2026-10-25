@@ -4,7 +4,7 @@
 
 English · [简体中文](README.zh-CN.md)
 
-Go 1.20+ · System Git · Declarative configuration
+Go 1.26 / 1.27 · System Git · Declarative configuration
 
 [Quick start](#quick-start) · [Commands](#commands) · [Publish to GitHub](#publish-to-github) · [Axon migration checks](#check-and-repair-an-axon-migration)
 
@@ -37,13 +37,13 @@ $ orbit check
 
 ## Quick start
 
-Ensure **Git is on your PATH** and **Go 1.20+** is installed. Build from source on macOS / Linux:
+Ensure **Git is on your PATH**. Source builds require Go 1.26 or 1.27 (CI pins 1.26.10 and 1.27.3). Build from source on macOS / Linux:
 
 ```sh
 git clone https://github.com/HuangChenning/orbit-cli.git
 cd orbit-cli
 mkdir -p "$HOME/.orbit/bin"
-go build -o "$HOME/.orbit/bin/orbit" .
+go build -o "$HOME/.orbit/bin/orbit" ./src
 export PATH="$HOME/.orbit/bin:$PATH"
 orbit init
 ```
@@ -90,6 +90,8 @@ The downloaded files appear in `~/.orbit/repo/skills/skill-creator`. This exampl
 
 | Command | Purpose | Common options |
 | --- | --- | --- |
+| `orbit update check` | Check the latest stable GitHub Release | No asset configuration required |
+| `orbit update` | Download, verify SHA256 and replace the current program | No asset configuration required |
 | `orbit init` | Generate configuration without overwriting an existing file | `--path <dir>` |
 | `orbit vendor sync` | Download upstream and assemble local assets | `--label <label>`, `--jobs <n>` |
 | `orbit link` | Create or remove matching links according to the `link` switch | `--label <label>`, `--force` |
@@ -118,6 +120,8 @@ The command lists the selected dependencies and asks for confirmation. Use `orbi
 Cleanup preserves assembled assets in `~/.orbit/repo` and links pointing there. `orbit sync` can still commit and push those assets without a cache; the next `orbit vendor sync` downloads the removed caches again and refreshes the selected local assets.
 
 ## Directories and configuration
+
+In the source repository, Go code lives in `src/main.go` and `src/internal/`. You can keep project skills locally under the root `internal/skills/` directory; the entire root `internal/` directory is ignored by Git. `go.mod` and `go.sum` remain at the repository root; run build commands from there, using `go build -o orbit ./src` or `go run ./src --help`.
 
 | Default path | Purpose |
 | --- | --- |
@@ -182,6 +186,55 @@ Repair saves a byte-for-byte backup first and reports its changes. YAML comments
 
 Add `--repo "$HOME/.orbit/repo"` to either command to compare the local repository's file inventory and report unconfigured assets. This checks neither file bytes nor versions and does not guess unknown assets' sources.
 
+## Releases and binary installation
+
+Download stable packages from [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases). The first stable version is **v1.0.0**. Review candidates are also available from successful [Stable release checks runs](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml); candidate artifacts are published only after approval and verification of the merged commit.
+
+| Platform | Archive |
+| --- | --- |
+| macOS Apple Silicon | `orbit_1.0.0_darwin_arm64.tar.gz` |
+| macOS Intel | `orbit_1.0.0_darwin_amd64.tar.gz` |
+| Linux amd64 | `orbit_1.0.0_linux_amd64.tar.gz` |
+| Windows amd64 | `orbit_1.0.0_windows_amd64.zip` |
+
+Check `CANDIDATE.json` for the source SHA, toolchain, native runner and build parameters. Verify your archive against `SHA256SUMS` before extraction. On macOS use `shasum -a 256 <archive>`; Linux: `sha256sum <archive>`; PowerShell: `Get-FileHash <archive> -Algorithm SHA256`. Compare the complete hash with the matching filename's entry.
+
+On macOS / Linux, extract your archive, copy `orbit` to `~/.orbit/bin`, add that directory to PATH, then run `orbit --version` and `orbit --help`. On Windows, use `Expand-Archive`, place `orbit.exe` in `$HOME\.orbit\bin`, add that directory to the user PATH, and run the same checks in a new terminal. Binary users need system Git, but do not need Go or Python.
+
+**Packages are unsigned**: no Apple Developer ID signature/notarization or Windows Authenticode signature. If macOS blocks a downloaded binary, verify its source and checksum, then use the per-app approval in System Settings → Privacy & Security. Keep system-wide security protections enabled. Windows symlinks require Developer Mode or an elevated terminal; Orbit reports a permission error when neither is available. Packages built with Go 1.27 require macOS 13 or newer; macOS 13/14 have not been tested by this matrix.
+
+`orbit --version` works without configuration or a Git connection. Source builds report `dev`; candidates report the version, full commit SHA, UTC build timestamp and Go version. The timestamp is the source commit time for repeatable builds. Archives include the binary, MIT license, both READMEs and changelog.
+
+[Go runtime requirements](https://go.dev/wiki/MinimumRequirements) also specify Linux kernel 3.2+ and Windows 10+ / Windows Server 2016+. These are toolchain minima; Orbit native acceptance uses only the runner images listed above. WSL 1 is unsupported.
+
+If upgrading an earlier unpublished checkout, rebuild from `./src`, set `orbit_repo.local_path` to `~/.orbit/repo`, use `orbit vendor sync` for downloads and `orbit sync` for pushes. Run `orbit link` to migrate matching old cache links, then `orbit clean` to remove selected owned caches. Existing unrelated paths require manual review.
+
+## Online updates
+
+```sh
+orbit update check
+orbit update
+```
+
+Updates follow the latest **stable** GitHub Release for your operating system and architecture. Pre-releases are excluded. Orbit verifies the matching archive against the release's `SHA256SUMS` before installing; an equal or newer installed stable version is kept. A development build can move to a published stable version. These commands require HTTPS access to GitHub, without an asset configuration or Git connection.
+
+If no stable Release is available, update checks report that explicitly. CI candidate artifacts are not selected by the updater. Download, checksum or extraction failures preserve the installed program. Installation uses a temporary file beside the actual executable and requires write permission to that directory; no privilege elevation is attempted. If Windows keeps the old running program locked, Orbit reports the retained backup path for removal after the old process exits. SHA256 verifies integrity; the packages remain unsigned.
+
+## Development checks
+
+With Go, Python 3.12 and Git installed:
+
+```sh
+python3 -m pip install -r tests/requirements.txt
+go build -o orbit ./src
+go vet ./...
+go test -race ./...
+python3 -m unittest discover -s tests/acceptance -v
+python3 -m unittest discover -s tests -p test_synthetic_config.py -v
+```
+
+On Windows build `orbit.exe` instead. Set `ORBIT_BIN` to test another binary. CI tests the actual extracted candidate on Go 1.27.3 and a development binary on Go 1.26.10. Fixtures use temporary local repositories and synthetic assets; no personal Axon inventory is required. Candidate builders run `python3 tools/release.py build --version v1.0.0` from a clean committed checkout using native Go 1.27.3; this creates files under `dist/` and never publishes a release.
+
 ## Limitations and behavior
 
 | Scenario | Behavior |
@@ -192,6 +245,6 @@ Add `--repo "$HOME/.orbit/repo"` to either command to compare the local reposito
 | Diverged personal repository history | Normal push by default, without automatic merge/rebase; `sync --force` requires confirmation, or explicit `--force --yes` in non-interactive use |
 | Cache cleanup | `clean --yes` confirms deletion of selected managed caches; assembled assets and their links remain available; `--yes` alone does not authorize a force push |
 | Git extensions | Git LFS and submodules are not supported yet |
-| Platform verification | Runtime verified on macOS arm64; cross-compilation passed for macOS amd64, Linux amd64, and Windows amd64; native Linux / Windows behavior still needs verification |
+| Platform validation | The PR workflow runs native functional tests on macOS 15 arm64 / amd64, Ubuntu 24.04 amd64, and Windows Server 2022 amd64; check the exact candidate run before installation |
 
 Commands exit with `0` on success and a nonzero status on validation differences or operational failure. See `orbit --help` and `orbit <command> --help` for all options.

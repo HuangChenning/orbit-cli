@@ -7,11 +7,13 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
-	"github.com/HuangChenning/orbit-cli/internal/config"
-	"github.com/HuangChenning/orbit-cli/internal/engine"
+	"github.com/HuangChenning/orbit-cli/src/internal/config"
+	"github.com/HuangChenning/orbit-cli/src/internal/engine"
+	"github.com/HuangChenning/orbit-cli/src/internal/updater"
 	"github.com/spf13/cobra"
 )
 
@@ -31,6 +33,8 @@ func Execute() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	root := &cobra.Command{Use: "orbit", Short: "Download, link and publish Git-backed assets", SilenceUsage: true, SilenceErrors: true}
+	root.Version = Version
+	root.SetVersionTemplate(fmt.Sprintf("orbit {{.Version}}\ncommit: %s\nbuilt: %s\ngo: %s\n", Commit, BuildTime, runtime.Version()))
 	var explicit string
 	var labels []string
 	var jobs int
@@ -67,6 +71,9 @@ func Execute() error {
 	}
 	var initPath string
 	init := &cobra.Command{Use: "init", Short: "Create orbit.yaml without overwriting an existing file", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		if initPath == "" {
+			return fmt.Errorf("home directory unavailable; use init --path")
+		}
 		p := filepath.Join(initPath, "orbit.yaml")
 		if err := config.NoSymlinks(filepath.Dir(p)); err != nil {
 			return err
@@ -90,10 +97,11 @@ func Execute() error {
 		return nil
 	}}
 	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
+	defaultInitPath := ""
+	if err == nil {
+		defaultInitPath = filepath.Join(home, ".orbit")
 	}
-	init.Flags().StringVarP(&initPath, "path", "p", filepath.Join(home, ".orbit"), "directory for orbit.yaml")
+	init.Flags().StringVarP(&initPath, "path", "p", defaultInitPath, "directory for orbit.yaml")
 	root.AddCommand(init)
 	vendor := &cobra.Command{Use: "vendor", Short: "Manage upstream assets"}
 	vendor.AddCommand(&cobra.Command{Use: "sync", Short: "Download upstream assets into the local Orbit repository", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
@@ -162,6 +170,23 @@ func Execute() error {
 	}}
 	clean.Flags().BoolVar(&cleanYes, "yes", false, "confirm cache removal")
 	root.AddCommand(clean)
+	update := &cobra.Command{Use: "update", Short: "Install the latest stable Orbit release", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		result, err := updater.Update(cmd.Context(), Version)
+		if err != nil {
+			return err
+		}
+		printUpdateResult(cmd, result, true)
+		return nil
+	}}
+	update.AddCommand(&cobra.Command{Use: "check", Short: "Check the latest stable Orbit release", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		result, err := updater.Check(cmd.Context(), Version)
+		if err != nil {
+			return err
+		}
+		printUpdateResult(cmd, result, false)
+		return nil
+	}})
+	root.AddCommand(update)
 	addCheck(root, load)
 	return root.ExecuteContext(ctx)
 }
@@ -176,4 +201,18 @@ func confirm(cmd *cobra.Command, message string) error {
 		return fmt.Errorf("cancelled")
 	}
 	return nil
+}
+
+func printUpdateResult(cmd *cobra.Command, result updater.Result, installed bool) {
+	fmt.Fprintf(cmd.OutOrStdout(), "current: %s\nlatest: %s\n", result.Current, result.Latest)
+	if result.Available && installed {
+		fmt.Fprintln(cmd.OutOrStdout(), "Updated to", result.Latest)
+	} else if result.Available {
+		fmt.Fprintln(cmd.OutOrStdout(), "Update available; run orbit update")
+	} else {
+		fmt.Fprintln(cmd.OutOrStdout(), "Already up to date")
+	}
+	if result.Backup != "" {
+		fmt.Fprintln(cmd.OutOrStdout(), "Previous binary retained at:", result.Backup)
+	}
 }
