@@ -69,11 +69,13 @@ link_targets:
 dependencies:
   - name: "skill-creator"
     source: "https://github.com/anthropics/skills.git"
-    version: "refs/heads/main"
+    ref: "refs/heads/main"
     subdir: "skills/skill-creator"
     mirror_dir: "skills/skill-creator"
+    vendor: true
     link: true
-    labels: ["skills"]
+    labels:
+      - skills
 ```
 
 然后执行：
@@ -93,18 +95,21 @@ orbit check
 | `orbit update check` | 检查 GitHub 最新稳定版 | 无需资产配置 |
 | `orbit update` | 下载、校验 SHA256 后替换当前程序 | 无需资产配置 |
 | `orbit init` | 生成配置，不覆盖已有文件 | `--path <dir>` |
-| `orbit vendor sync` | 下载上游并组装本地资产 | `--label <label>`、`--jobs <n>` |
-| `orbit link` | 按 `link` 开关建立或移除匹配的链接 | `--label <label>`、`--force` |
-| `orbit sync` | 将本地资产提交并推送到个人远端 | `--label <label>`、`--message <text>` |
+| `orbit vendor sync` | 下载上游并组装本地资产 | `--name <name>` / `--label <label>`、`--jobs <n>` |
+| `orbit link` | 按 `link` 开关建立或移除匹配的链接 | `--name <name>` / `--label <label>`、`--force` |
+| `orbit sync` | 将本地资产提交并推送到个人远端 | `--name <name>` / `--label <label>`、`--message <text>` |
 | `orbit check` | 检查缓存与启用的链接 | 显式 Axon 输入下支持 `--fix` |
-| `orbit clean` | 预览并确认清理选中的受管理缓存 | `--label <label>`、`--yes` |
+| `orbit clean` | 预览并确认清理选中的受管理缓存 | `--name <name>` / `--label <label>`、`--yes` |
 
-标签区分大小写；重复 `--label` 按 **OR** 匹配，零匹配报错。Vendor 下载默认最多 4 个并发 Git 操作。Git 操作默认超时两分钟，可用 `--timeout` 调整。
+使用 `--name` 按资产名称精确选择，或用 `--label` 按可选标签分组选择，二者互斥。两个参数都支持英文逗号列表和重复传参，会去除各项首尾空白、自动去重，并按 **OR** 取并集。名称和标签区分大小写；未知名称、标签零匹配、空项和中文逗号 `，` 均报错。筛选也适用于 `link`、`sync`、`check`、`clean`；显式 Axon 覆盖校验及修复始终比较完整配置。Vendor 下载默认最多 4 个并发 Git 操作。Git 操作默认超时两分钟，可用 `--timeout` 调整。
 
-Vendor 下载只获取配置指定版本的浅层快照，不拉取全部分支和完整历史。缓存属于内部实现，日常使用 `~/.orbit/repo` 中组装后的文件。
+Vendor 下载只获取配置指定 Git ref 的浅层快照，不拉取全部分支和完整历史。缓存属于内部实现，日常使用 `~/.orbit/repo` 中组装后的文件。
 
 ```sh
-orbit vendor sync --label skills --label workflows --jobs 4
+# 将示例资产名替换为配置中声明的名称。
+orbit vendor sync --name core-skill,go-review
+orbit vendor sync --name core-skill --name go-review
+orbit vendor sync --label skills,workflows --jobs 4
 ```
 
 ### 清理下载缓存
@@ -166,11 +171,16 @@ orbit clean
 | --- | --- | --- | --- |
 | `name` | 字符串 | 必填、非空且不能重复 | 报告和 manifest 中使用的资产标识；存储及链接路径由 `mirror_dir` 决定，不由名称决定。 |
 | `source` | 字符串 | 必填、非空 | 上游 Git HTTPS/SSH 地址或本地仓库路径。`./vendor/example` 等本地相对路径以配置目录为基准，本地路径支持 `~/...`。 |
-| `version` | 字符串 | 必填，无默认值 | 上游 branch、tag 或完整的 40 位 commit SHA。分支建议写 `refs/heads/main`，标签建议写 `refs/tags/v1.2.3`。短名称无歧义时可用，branch/tag 同名会报错；分支跟随更新，commit SHA 固定内容，已缓存标签变化会被拒绝。 |
+| `ref` | 字符串 | 必填，无默认值 | 上游 branch、tag 或完整的 40 位 commit SHA。分支建议写 `refs/heads/main`，标签建议写 `refs/tags/v1.2.3`。短名称无歧义时可用，branch/tag 同名会报错；分支跟随更新，commit SHA 固定内容，已缓存标签变化会被拒绝。 |
 | `subdir` | 相对路径字符串 | 省略或为空时默认 `.` | 上游 checkout 内选取的目录，例如 `skills/skill-creator`；`.` 表示整个仓库。必须是目录，不能直接指向单个文件。 |
 | `mirror_dir` | 相对路径字符串 | 可省略；`link: true` 时必填 | 个人本地 repo 内的目标目录，例如 `skills/skill-creator`。省略后该依赖只下载到缓存；首段路径用于选择链接类别。 |
+| `vendor` | 布尔值 | 默认 `true` | 控制 `orbit vendor sync` 是否下载并组装此资产。`false` 会跳过更新，即使全量刷新也保留其已有本地文件和 manifest 记录；不影响链接和 `orbit sync` 发布。显式 `--name` 也不会覆盖此开关。 |
 | `link` | 布尔值 | 默认 `false` | 控制 `orbit link` 是否建立该资产的链接。`false` 不影响下载和发布；执行 `orbit link` 时会清理此前匹配的受管理链接，不删除资产文件。 |
-| `labels` | 字符串列表 | 默认 `[]`，各项不能为空 | 显式分组标签，例如 `["core", "backend"]`，不会根据 `mirror_dir` 或类别自动生成。不带 `--label` 时包含全部依赖；重复传入 `--label` 按精确、区分大小写的 OR 规则取并集，无匹配时报错。 |
+| `labels` | 字符串列表 | 默认 `[]`，各项不能为空 | 显式分组标签，例如 `["core", "backend"]`，不会根据 `mirror_dir` 或类别自动生成。不带 `--name` 或 `--label` 时选择全部依赖；`--label core,backend` 按精确匹配取并集，也支持重复参数，无匹配时报错。标签可省略，配置时放在 `vendor`、`link` 后的最后位置；多行列表与行内列表等价。 |
+
+旧配置中的依赖 `version` 仍作为 `ref` 的别名读取；两者同时出现时报错，即使其中一个为空。生成或修复的条目使用 `ref`，顶层 `version: "1.0"` 仍表示 YAML 格式版本。已有缓存标识及 manifest 来源记录继续兼容。
+
+当受管理本地资产已存在时，`vendor: false` 可以配合 `link: true` 使用；本地资产不存在时，链接会明确报错。运行 `orbit check` 会跳过已关闭 vendor 的缓存校验，但仍校验其启用的链接。
 
 ### 路径与链接映射
 
@@ -191,16 +201,19 @@ link_targets:
 dependencies:
   - name: "core-skill"
     source: "https://github.com/anthropics/skills.git"
-    version: "refs/heads/main"
+    ref: "refs/heads/main"
     subdir: "skills/skill-creator"
     mirror_dir: "skills/core-skill"
+    vendor: true
     link: true
-    labels: ["core", "backend"]
+    labels:
+      - core
+      - backend
 ```
 
 使用默认 `local_path` 时，选中的上游目录会组装到 `~/.orbit/repo/skills/core-skill`；执行 `orbit link` 后，映射到 `~/.claude/skills/core-skill` 和 `~/.codex/skills/core-skill`。`skills/` 后的后缀会拼接到各工具根目录。配置多个 skill 时，应使用 `skills/core-skill`、`skills/another-skill` 等独立目录，不能都指定为 `skills`。
 
-相同 `source`、`version` 的依赖共用一份缓存，即使名称或 `subdir` 不同。标签筛选的是依赖，并不会复制缓存：清理被选中的共享缓存，也会移除未选中但共用该缓存的依赖缓存；已组装的 repo 资产及指向它们的链接仍然可用。
+相同 `source`、`ref` 的依赖共用一份缓存，即使名称或 `subdir` 不同。标签筛选的是依赖，并不会复制缓存：清理被选中的共享缓存，也会移除未选中但共用该缓存的依赖缓存；已组装的 repo 资产及指向它们的链接仍然可用。
 
 ## 提交推送到 GitHub
 
@@ -219,10 +232,10 @@ orbit_repo:
 orbit sync
 ```
 
-- `vendor sync` 在替换受管理目录前准备全部选中资产。下载或复制校验失败时，保留此前组装的资产；全量刷新只清除此前管理的陈旧资产，按标签刷新保留未选中资产。刷新的受管理资产会丢弃本地修改，以恢复上游内容。
+- `vendor sync` 在替换受管理目录前准备全部选中资产。下载或复制校验失败时，保留此前组装的资产；全量刷新只清除此前管理的陈旧资产，并保留 `vendor: false` 的资产；按名称或标签刷新保留未选中资产。刷新的受管理资产会丢弃本地修改，以恢复上游内容。
 - 首次 Vendor 操作可克隆个人远端以保留历史和 README 等未管理文件，但不创建提交、不推送。后续下载不会发布待提交的本地修改。
 - Vendor 组装排除各层 `.git`，并应用配置旁 `.orbitignore` 中的 Gitignore 风格规则。保留内部相对链接，拒绝绝对或越界链接；`.env` 不会被隐式排除。发布时也会拒绝本地新增的嵌套 Git 仓库。
-- `sync` 发布当前受管理的本地资产，包括你的修改，不要求缓存存在，也不访问上游依赖。未管理文件的工作区修改及已有暂存修改需手工处理。仓库根目录中未跟踪的 `.DS_Store` 会保留且不发布，即使它已被 Git 忽略；已跟踪或已暂存的修改仍需手工处理。`--label` 只暂存选中资产及其 manifest 条目，其他本地修改留待后续发布。
+- `sync` 发布当前受管理的本地资产，包括你的修改，不要求缓存存在，也不访问上游依赖。未管理文件的工作区修改及已有暂存修改需手工处理。仓库根目录中未跟踪的 `.DS_Store` 会保留且不发布，即使它已被 Git 忽略；已跟踪或已暂存的修改仍需手工处理。`--name` 或 `--label` 只暂存选中资产及其 manifest 条目，其他本地修改留待后续发布。
 - `.orbit-manifest.yaml` 记录组装时的上游来源和实际提交，不代表后续本地修改仍与该提交一致。内容未变时不创建空提交；推送失败保留本地提交以便重试。Git 属性或 filter 转换资产字节时拒绝发布，清除本次暂存并保留本地文件。
 
 ## 从 Axon 校验与修复
@@ -241,13 +254,13 @@ orbit check --axon-config "$HOME/.axon/axon.yaml" \
   --vendors "$HOME/.axon/repo/axon.vendors.yaml" --fix
 ```
 
-修复前保存原始字节备份，报告包含变更项；YAML 注释与格式会规范化。自定义依赖、标签和 `link: false` 会保留，来源冲突不自动覆盖，原 Axon 文件不改写。
+修复前保存原始字节备份，报告包含变更项；YAML 注释与格式会规范化。自定义依赖、标签、`vendor: false` 和 `link: false` 会保留，来源冲突不自动覆盖，原 Axon 文件不改写。
 
 在上述命令中增加 `--repo "$HOME/.orbit/repo"` 可比较本地仓库的文件清单，报告未配置的仓内资产；它不验证文件字节或版本，也不猜测未知资产的来源。
 
 ## 版本发布与二进制安装
 
-从 [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases) 下载稳定版安装包，首个稳定版本为 **v1.0.0**。成功的 [Stable release checks 工作流](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml) 也提供供审核的候选产物；候选产物经批准且验证合并后的提交后才正式发布。
+从 [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases) 下载稳定版安装包，本文档对应 **v1.1.0**。成功的 [Stable release checks 工作流](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml) 也提供供审核的候选产物；候选产物经批准且验证合并后的提交后才正式发布。
 
 | 平台 | 压缩包 |
 | --- | --- |
@@ -292,7 +305,7 @@ python3 -m unittest discover -s tests/acceptance -v
 python3 -m unittest discover -s tests -p test_synthetic_config.py -v
 ```
 
-Windows 构建文件名使用 `orbit.exe`。通过 `ORBIT_BIN` 可指定其他程序；CI 在 Go 1.27.3 中测试实际解压的候选程序，在 Go 1.26.10 中测试开发构建。测试仅使用临时本地仓库及合成资产，不依赖个人 Axon 清单。构建候选包时，在干净且已提交的源码目录中使用原生 Go 1.27.3 运行 `python3 tools/release.py build --version v1.0.0`，产物位于 `dist/`，不会发布版本。
+Windows 构建文件名使用 `orbit.exe`。通过 `ORBIT_BIN` 可指定其他程序；CI 在 Go 1.27.3 中测试实际解压的候选程序，在 Go 1.26.10 中测试开发构建。测试仅使用临时本地仓库及合成资产，不依赖个人 Axon 清单。构建候选包时，在干净且已提交的源码目录中使用原生 Go 1.27.3 运行 `python3 tools/release.py build --version v1.1.0`，产物位于 `dist/`，不会发布版本。
 
 ## 限制与行为边界
 

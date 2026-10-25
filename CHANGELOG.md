@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.0 — 2026-10-25
+
+- Use dependency `ref` for Git branches, tags and commits; accept legacy dependency `version` while rejecting configurations containing both keys. The schema version remains `"1.0"`, and existing caches/manifests remain compatible.
+- Add `vendor: false` to skip upstream downloads and assembly while preserving local assets, manifest records, linking and publication. The default is `true`.
+- Select assets with `--name`, or optional groups with `--label`; both accept comma-separated lists and repeated flags, with whitespace trimming, deduplication and OR matching. Reject mixed selectors, unknown names, empty items and Chinese commas.
+- Generate and repair canonical dependency refs, preserve disabled switches, and place optional labels after vendor/link. Expand English and Chinese configuration references and examples.
+
 ## v1.0.0 — 2026-10-25
 
 - Download and assemble Git-backed skills, workflows, scripts and commands with `orbit vendor sync`.

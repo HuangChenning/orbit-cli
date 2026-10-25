@@ -108,8 +108,8 @@ class SyntheticConfigurationContracts(unittest.TestCase):
     def test_repair_preserves_custom_labels_link_false_and_additional_dependencies(self):
         self.repaired()
         custom = self.config["dependencies"][0]
-        custom.update(labels=["team-owned", "custom-label"], link=False)
-        self.config["dependencies"].append(dict(name="extra", source=self.remote, version="main",
+        custom.update(labels=["team-owned", "custom-label"], vendor=False, link=False)
+        self.config["dependencies"].append(dict(name="extra", source=self.remote, ref="main",
                                                 subdir="extra", mirror_dir="extras/local", link=False,
                                                 labels=["private-selection"]))
         self.config["link_targets"]["skills"] *= 2
@@ -120,6 +120,26 @@ class SyntheticConfigurationContracts(unittest.TestCase):
         self.assertEqual(self.config["dependencies"], expected)
         self.assertEqual(report["additional_dependencies"], ["extra"])
         self.assertEqual(len(self.config["link_targets"]["skills"]), 1)
+
+    def test_repair_canonicalizes_legacy_refs_and_keeps_labels_last(self):
+        self.repaired()
+        custom = self.config["dependencies"][0]
+        custom["version"] = custom.pop("ref")
+        custom["vendor"] = False
+        custom["link"] = False
+        custom["labels"] = ["skills", "vendor"]
+        self.config["link_targets"]["skills"] = []
+        self.save()
+        self.repaired()
+        asset = self.config["dependencies"][0]
+        self.assertEqual(asset["ref"], "main")
+        self.assertNotIn("version", asset)
+        self.assertFalse(asset["vendor"])
+        self.assertFalse(asset["link"])
+        self.assertEqual(asset["labels"], ["skills", "vendor"])
+        keys = list(asset)
+        self.assertEqual(keys[-3:], ["vendor", "link", "labels"])
+        self.check()
 
     def test_conflicting_sources_never_get_overwritten_by_repair(self):
         self.repaired()

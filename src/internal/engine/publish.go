@@ -25,7 +25,7 @@ func (e *Engine) localAsset(d config.Dependency) (string, Entry, error) {
 		if entry.Name != d.Name {
 			continue
 		}
-		if entry.Source != d.Source || entry.Version != d.Version || entry.Subdir != d.Subdir || entry.MirrorDir != d.MirrorDir || entry.Commit == "" {
+		if entry.Source != d.Source || entry.Version != d.Ref || entry.Subdir != d.Subdir || entry.MirrorDir != d.MirrorDir || entry.Commit == "" {
 			return "", Entry{}, fmt.Errorf("%s local asset identity changed; run orbit vendor sync", d.Name)
 		}
 		path := filepath.Join(r.LocalPath, filepath.FromSlash(d.MirrorDir))

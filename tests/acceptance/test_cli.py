@@ -134,6 +134,88 @@ class OrbitCLIFixture(unittest.TestCase):
 
 
 class OrbitCLIContracts(OrbitCLIFixture):
+    def test_ref_migration_reuses_installed_assets_and_cache(self):
+        self.sync_link()
+        states = sorted((self.root / "cache/.state").glob("*.json"))
+        before = {p.name: p.read_bytes() for p in states}
+        manifest = (self.root / "mirror/.orbit-manifest.yaml").read_bytes()
+        for dep in self.config["dependencies"]:
+            dep["ref"] = dep.pop("version")
+        self.save()
+        self.orbit("check")
+        self.orbit("link")
+        self.orbit("sync")
+        self.assertEqual((self.root / "mirror/.orbit-manifest.yaml").read_bytes(), manifest)
+        self.assertEqual({p.name: p.read_bytes() for p in states}, before)
+        self.assertEqual(len(list((self.root / "cache/.state").glob("*.json"))), 1)
+
+    def test_vendor_false_preserves_local_edits_manifest_and_publication(self):
+        self.sync_link()
+        asset = self.root / "mirror/skills/SKILL.md"
+        asset.write_text("local customization\n")
+        old_entry = yaml.safe_load((self.root / "mirror/.orbit-manifest.yaml").read_text())["dependencies"]
+        old_entry = next(d for d in old_entry if d["name"] == "skills")
+        self.config["dependencies"][0]["vendor"] = False
+        self.save()
+        (self.upstream / "skills/alpha/SKILL.md").write_text("upstream v2\n")
+        (self.upstream / "commands/build.md").write_text("upstream build v2\n")
+        self.commit("upstream v2")
+        self.orbit("vendor", "sync")
+        self.assertEqual(asset.read_text(), "local customization\n")
+        self.assertEqual((self.root / "mirror/commands/build.md").read_text(), "upstream build v2\n")
+        entries = yaml.safe_load((self.root / "mirror/.orbit-manifest.yaml").read_text())["dependencies"]
+        self.assertEqual(next(d for d in entries if d["name"] == "skills"), old_entry)
+        self.orbit("link")
+        self.orbit("sync")
+        self.assertEqual(self.git(self.remote, "show", "main:skills/SKILL.md"), "local customization\n")
+        self.orbit("clean", "--yes")
+        for dep in self.config["dependencies"]:
+            dep["vendor"] = False
+        self.save()
+        self.orbit("check")
+
+    def test_disabled_vendors_skip_unavailable_sources_and_missing_assets_fail_link(self):
+        self.config["dependencies"] = [dict(name="disabled", source=str(self.root / "missing.git"),
+                                             ref="main", mirror_dir="skills/disabled",
+                                             vendor=False, link=True)]
+        self.save()
+        self.orbit("vendor", "sync")
+        self.orbit("vendor", "sync", "--name", "disabled")
+        self.assertFalse((self.root / "cache").exists())
+        self.assertFalse((self.root / "mirror").exists())
+        self.orbit("link", success=False)
+
+    def test_name_and_label_lists_update_only_selected_assets(self):
+        self.sync_link()
+        for flag in ("--name", "--label"):
+            for values in (("skills,workflows",), ("skills", "workflows"), (" skills ,workflows,skills ",)):
+                with self.subTest(flag=flag, values=values):
+                    (self.root / "mirror/scripts/run.sh").write_text("keep unselected\n")
+                    (self.root / "mirror/skills/SKILL.md").write_text("replace selected\n")
+                    args = ["vendor", "sync"]
+                    for value in values:
+                        args.extend((flag, value))
+                    result = self.orbit(*args)
+                    self.assertIn("assembled 2 dependencies", result.stdout)
+                    self.assertEqual((self.root / "mirror/skills/SKILL.md").read_text(), "alpha-v1\n")
+                    self.assertEqual((self.root / "mirror/scripts/run.sh").read_text(), "keep unselected\n")
+        self.orbit("link", "--name", "skills")
+        self.orbit("check", "--name", "skills")
+        self.orbit("sync", "--name", "skills")
+        self.assertEqual(self.git(self.remote, "show", "main:skills/SKILL.md"), "alpha-v1\n")
+        self.assertNotIn("scripts", self.git(self.remote, "ls-tree", "--name-only", "main").splitlines())
+
+    def test_invalid_selectors_fail_before_downloading(self):
+        for flag in ("--name", "--label"):
+            for value in ("", ",skills", "skills,", "skills,,workflows", "skills，workflows", "skills,   "):
+                with self.subTest(flag=flag, value=value):
+                    result = self.orbit("vendor", "sync", flag, value, success=False)
+                    self.assertTrue("empty" in result.stderr or "comma" in result.stderr, result.stderr)
+        for args in (("--name", "skills,typo"), ("--name", "skills", "--label", "skills")):
+            self.orbit("vendor", "sync", *args, success=False)
+        self.assertFalse((self.root / "cache").exists())
+        self.assertFalse((self.root / "mirror").exists())
+
     def test_operational_chain_publishes_edits_and_preserves_links_after_clean(self):
         self.path.unlink()
         self.orbit("init", "--path", str(self.root), explicit=False)

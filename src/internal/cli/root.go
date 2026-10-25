@@ -25,7 +25,8 @@ link_targets:
 dependencies: []
 # Set orbit_repo.remote and branch before orbit vendor sync.
 # Default orbit_repo.local_path: ~/.orbit/repo.
-# Add dependencies with name, source, version, subdir, mirror_dir and link.
+# Add dependencies with name, source, ref, subdir, mirror_dir, vendor, link and optional labels.
+# vendor defaults to true; link defaults to false; put labels last.
 # Example: mirror_dir: skills/example maps to ~/.claude/skills/example.
 `
 
@@ -36,11 +37,12 @@ func Execute() error {
 	root.Version = Version
 	root.SetVersionTemplate(fmt.Sprintf("orbit {{.Version}}\ncommit: %s\nbuilt: %s\ngo: %s\n", Commit, BuildTime, runtime.Version()))
 	var explicit string
-	var labels []string
+	var labels, names []string
 	var jobs int
 	var timeout time.Duration
 	root.PersistentFlags().StringVar(&explicit, "config", "", "configuration path (otherwise search parent directories)")
-	root.PersistentFlags().StringArrayVarP(&labels, "label", "l", nil, "select any matching label; repeat for OR")
+	root.PersistentFlags().StringArrayVarP(&labels, "label", "l", nil, "select matching labels; comma-separated or repeated for OR")
+	root.PersistentFlags().StringArrayVar(&names, "name", nil, "select exact asset names; comma-separated or repeated")
 	root.PersistentFlags().IntVar(&jobs, "jobs", 4, "maximum concurrent vendor download operations")
 	root.PersistentFlags().DurationVar(&timeout, "timeout", 2*time.Minute, "timeout per Git operation")
 	load := func(coverage bool) (*engine.Engine, []config.Dependency, error) {
@@ -66,7 +68,7 @@ func Execute() error {
 		if err != nil {
 			return nil, nil, err
 		}
-		deps, err := cfg.Select(labels)
+		deps, err := cfg.Select(labels, names)
 		return &engine.Engine{Config: cfg, Out: root.OutOrStdout(), Jobs: jobs, Timeout: timeout}, deps, err
 	}
 	var initPath string
@@ -112,12 +114,24 @@ func Execute() error {
 		if e.Config.OrbitRepo == nil {
 			return fmt.Errorf("orbit_repo is required for vendor sync")
 		}
+		var enabled []config.Dependency
+		for _, dep := range d {
+			if dep.Vendoring() {
+				enabled = append(enabled, dep)
+			} else {
+				fmt.Fprintln(cmd.OutOrStdout(), "skipped", dep.Name, "(vendor: false)")
+			}
+		}
+		if len(d) > 0 && len(enabled) == 0 {
+			return nil
+		}
+		d = enabled
 		if err = e.Sync(cmd.Context(), d); err != nil {
 			return err
 		}
 		for _, dep := range d {
 			if dep.MirrorDir != "" {
-				return e.Assemble(cmd.Context(), d, len(labels) == 0)
+				return e.Assemble(cmd.Context(), d, len(labels) == 0 && len(names) == 0)
 			}
 		}
 		return nil
@@ -146,7 +160,7 @@ func Execute() error {
 			}
 		}
 		e.Message = message
-		return e.Publish(cmd.Context(), d, len(labels) == 0, force)
+		return e.Publish(cmd.Context(), d, len(labels) == 0 && len(names) == 0, force)
 	}}
 	publish.Flags().BoolVarP(&force, "force", "f", false, "allow forced push after explicit confirmation")
 	publish.Flags().BoolVar(&yes, "yes", false, "confirm the requested force operation")

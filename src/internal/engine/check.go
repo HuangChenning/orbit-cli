@@ -146,7 +146,8 @@ func (e *Engine) baseline(ctx context.Context, o CheckOptions) (baseline, error)
 			return err
 		}
 		group, _, _ := strings.Cut(dest, "/")
-		b.Dependencies = append(b.Dependencies, config.Dependency{Name: name, Source: source, Version: version, Subdir: subdir, MirrorDir: dest, Link: len(b.Targets[group]) > 0, Labels: []string{group, origin}})
+		vendor := true
+		b.Dependencies = append(b.Dependencies, config.Dependency{Name: name, Source: source, Ref: version, Subdir: subdir, MirrorDir: dest, Vendor: &vendor, Link: len(b.Targets[group]) > 0, Labels: []string{group, origin}})
 		return nil
 	}
 	covered := map[string]bool{}
@@ -234,7 +235,7 @@ func compare(c *config.Config, b baseline, repo string) (map[string]any, error) 
 			appendReport(r, "missing_dependencies", want)
 			continue
 		}
-		values := [][3]string{{"name", got.Name, want.Name}, {"source", got.Source, want.Source}, {"version", got.Version, want.Version}, {"subdir", got.Subdir, want.Subdir}}
+		values := [][3]string{{"name", got.Name, want.Name}, {"source", got.Source, want.Source}, {"ref", got.Ref, want.Ref}, {"subdir", got.Subdir, want.Subdir}}
 		for _, value := range values {
 			a := value[1]
 			if value[0] == "subdir" {
@@ -499,12 +500,17 @@ func (e *Engine) Check(ctx context.Context, deps []config.Dependency) (map[strin
 	r := map[string]any{"status": "ok", "verification": "clean cache and configured symlink destinations", "issues": []string{}}
 	issues := []string{}
 	for _, d := range deps {
-		l, err := e.lock(d, false)
-		if err != nil {
-			issues = append(issues, err.Error())
-			continue
+		var err error
+		unlock := func() {}
+		if d.Vendoring() {
+			l, lockErr := e.lock(d, false)
+			if lockErr != nil {
+				issues = append(issues, lockErr.Error())
+				continue
+			}
+			_, _, err = e.ready(ctx, d)
+			unlock = func() { l.Unlock() }
 		}
-		_, _, err = e.ready(ctx, d)
 		var source string
 		if err == nil && d.Link {
 			source, _, err = e.localAsset(d)
@@ -521,7 +527,7 @@ func (e *Engine) Check(ctx context.Context, deps []config.Dependency) (map[strin
 				}
 			}
 		}
-		l.Unlock()
+		unlock()
 	}
 	r["issues"] = issues
 	if len(issues) > 0 {
