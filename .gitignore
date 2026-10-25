@@ -11,6 +11,7 @@ __pycache__/
 !/tests/helpers/
 !/tests/test_synthetic_config.py
 !/tests/requirements.txt
+!/tests/CONTRACTS.md
 /testdata/
 /tools/check_config.py
 /orbit.yaml

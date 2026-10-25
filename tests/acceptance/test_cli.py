@@ -4,6 +4,8 @@ ORBIT_BIN=/absolute/path/to/orbit python3 -m unittest discover -s tests/acceptan
 Missing CLI is an explicit prerequisite failure, never a skip or a fake success.
 """
 
+import json
+import stat
 import os
 import pathlib
 import subprocess
@@ -75,6 +77,25 @@ class OrbitCLIFixture(unittest.TestCase):
             ))
         self.save()
 
+    def cache_path(self, dependency):
+        for path in (self.root / "cache/.state").glob("*.json"):
+            state = json.loads(path.read_text())
+            if (state["Version"] == dependency["version"] and
+                    pathlib.Path(state["Source"]).resolve() == pathlib.Path(dependency["source"]).resolve()):
+                return self.root / "cache" / path.stem
+        self.fail("selected dependency must have a ready cache ownership record")
+
+    def remove_fixture_tree(self, path):
+        # Only this test's temporary tree may have Git's read-only bits cleared.
+        path = pathlib.Path(path)
+        self.assertTrue(path.resolve().is_relative_to(self.root.resolve()))
+        def retry(function, filename, error):
+            if not isinstance(error[1], PermissionError):
+                raise error[1]
+            os.chmod(filename, stat.S_IWRITE | stat.S_IREAD)
+            function(filename)
+        shutil.rmtree(path, onerror=retry)
+
     def git(self, directory, *args, success=True):
         result = subprocess.run(
             ["git", "-c", "user.name=OrbitTests", "-c", "user.email=orbit@example.invalid",
@@ -113,6 +134,82 @@ class OrbitCLIFixture(unittest.TestCase):
 
 
 class OrbitCLIContracts(OrbitCLIFixture):
+    def test_operational_chain_publishes_edits_and_preserves_links_after_clean(self):
+        self.path.unlink()
+        self.orbit("init", "--path", str(self.root), explicit=False)
+        self.assertTrue(self.path.is_file())
+        self.save()
+        self.sync_link()
+        report = json.loads(self.orbit("check").stdout)
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(report["issues"], [])
+        linked = self.root / "workspace/skills/SKILL.md"
+        linked.write_bytes(b"local operational edit\n")
+        self.orbit("sync")
+        self.assertEqual(self.git(self.remote, "show", "main:skills/SKILL.md"), "local operational edit\n")
+        cache = self.cache_path(self.config["dependencies"][0])
+        self.orbit("clean", "--yes")
+        self.assertFalse(cache.exists())
+        self.assertTrue((self.root / "workspace/skills").is_symlink())
+        self.assertEqual(linked.read_bytes(), b"local operational edit\n")
+
+    def test_operational_check_reports_missing_wrong_links_and_dirty_cache(self):
+        self.sync_link()
+        target = self.root / "workspace/skills"
+        target.unlink()
+        result = json.loads(self.orbit("check", success=False).stdout)
+        self.assertTrue(any(issue.startswith("incorrect or missing link: ") and
+                            pathlib.Path(issue.removeprefix("incorrect or missing link: ")).resolve() == target.resolve()
+                            for issue in result["issues"]), result)
+        foreign = self.root / "foreign"
+        foreign.mkdir()
+        os.symlink(foreign, target, target_is_directory=True)
+        result = json.loads(self.orbit("check", success=False).stdout)
+        self.assertTrue(any(issue.startswith("incorrect or missing link: ") and
+                            pathlib.Path(issue.removeprefix("incorrect or missing link: ")).resolve() == target.resolve()
+                            for issue in result["issues"]), result)
+        self.orbit("link", "--force")
+        (self.cache_path(self.config["dependencies"][0]) / "skills/alpha/SKILL.md").write_text("dirty cache")
+        result = json.loads(self.orbit("check", success=False).stdout)
+        self.assertEqual(result["status"], "differences")
+        self.assertTrue(any("dirty cache" in issue for issue in result["issues"]), result)
+
+    def test_clean_labels_and_unsupported_all_preserve_unselected_cache(self):
+        self.config["dependencies"][0]["version"] = self.first
+        self.save()
+        self.sync_link()
+        selected = self.cache_path(self.config["dependencies"][0])
+        other = self.cache_path(self.config["dependencies"][1])
+        result = self.orbit("clean", "--all", "--yes", success=False)
+        self.assertIn("unknown flag: --all", result.stderr)
+        self.assertTrue(selected.is_dir())
+        self.assertTrue(other.is_dir())
+        self.orbit("clean", "--label", "skills", "--yes")
+        self.assertFalse(selected.exists())
+        self.assertTrue(other.is_dir())
+        self.assertEqual((self.root / "workspace/skills/SKILL.md").read_bytes(), b"alpha-v1\n")
+
+    def test_clean_rejects_selected_cache_with_invalid_ownership(self):
+        self.sync_link()
+        cache = self.cache_path(self.config["dependencies"][0])
+        state_path = self.root / "cache/.state" / (cache.name + ".json")
+        state = json.loads(state_path.read_text())
+        state["Source"] = "unrelated synthetic owner"
+        state_path.write_text(json.dumps(state))
+        result = self.orbit("clean", "--label", "skills", "--yes", success=False)
+        self.assertIn("ownership mismatch", result.stderr)
+        self.assertEqual((cache / "skills/alpha/SKILL.md").read_bytes(), b"alpha-v1\n")
+
+    def test_relative_escaping_symlink_is_not_copied_into_mirror(self):
+        outside = self.upstream / "outside-secret"
+        outside.write_text("must remain outside selected asset")
+        os.symlink("../../outside-secret", self.upstream / "skills/alpha/escape")
+        self.commit("relative escape fixture")
+        result = self.orbit("vendor", "sync", success=False)
+        self.assertIn("symlink escapes selected asset", result.stderr)
+        self.assertFalse((self.root / "mirror").exists())
+        self.assertEqual(outside.read_text(), "must remain outside selected asset")
+
     def test_version_requires_neither_configuration_nor_git(self):
         self.path.unlink()
         self.env.update(PATH=str(self.root / "no-programs"),
@@ -161,7 +258,7 @@ class OrbitCLIContracts(OrbitCLIFixture):
     def test_sync_publishes_local_assets_without_upstream_or_cache(self):
         self.orbit("vendor", "sync")
         self.upstream.rename(self.root / "offline-upstream")
-        shutil.rmtree(self.root / "cache")
+        self.remove_fixture_tree(self.root / "cache")
         (self.root / "mirror/skills/SKILL.md").write_text("local publication\n")
         self.orbit("sync")
         self.assertEqual(self.git(self.remote, "show", "main:skills/SKILL.md"),
@@ -233,7 +330,17 @@ class OrbitCLIContracts(OrbitCLIFixture):
         self.assertEqual((self.root / "workspace/skills/SKILL.md").read_bytes(), b"alpha-v1\n")
         self.orbit("link")
 
+    def use_native_short_cache_path(self):
+        if os.name == "nt":
+            import ctypes
+            buffer = ctypes.create_unicode_buffer(32768)
+            length = ctypes.windll.kernel32.GetShortPathNameW(str(self.root.resolve()), buffer, len(buffer))
+            self.assertGreater(length, 0, "Windows must resolve its native path alias")
+            self.config["global_cache"] = str(pathlib.Path(buffer.value) / "cache")
+            self.save()
+
     def test_repo_links_replace_matching_old_cache_links_without_force(self):
+        self.use_native_short_cache_path()
         self.orbit("vendor", "sync")
         target = self.root / "workspace/skills"
         target.parent.mkdir()
@@ -396,6 +503,10 @@ class OrbitCLIContracts(OrbitCLIFixture):
         self.save()
         self.orbit("vendor", "sync", success=False)
         self.assertFalse((self.root / "mirror").exists())
+        good_cache = self.cache_path(self.config["dependencies"][1])
+        self.assertEqual((good_cache / "skills/alpha/SKILL.md").read_bytes(), b"alpha-v1\n")
+        state = json.loads((self.root / "cache/.state" / (good_cache.name + ".json")).read_text())
+        self.assertEqual(state["Commit"], self.first)
         self.orbit("vendor", "sync", "--label", "skills")
         self.orbit("link", "--label", "skills")
         self.assertEqual((self.root / "workspace/skills/SKILL.md").read_bytes(), b"alpha-v1\n")
@@ -433,7 +544,7 @@ class OrbitCLIContracts(OrbitCLIFixture):
         target = self.root / "workspace/skills"
         source = target.resolve()
         second.unlink()
-        os.symlink(os.path.relpath(os.readlink(target), second.parent.resolve()), second, target_is_directory=True)
+        os.symlink(os.path.relpath(target.resolve(), second.parent.resolve()), second, target_is_directory=True)
         for dep in self.config["dependencies"]:
             dep["link"] = False
         self.save()
@@ -476,7 +587,12 @@ class OrbitCLIContracts(OrbitCLIFixture):
 
     def test_disabling_link_removes_dangling_links_without_recreating_cache(self):
         self.sync_link()
-        shutil.rmtree(self.root / "cache")
+        self.remove_fixture_tree(self.root / "cache")
+        self.remove_fixture_tree(self.root / "mirror")
+        for category in ("skills", "workflows", "scripts", "commands"):
+            target = self.root / "workspace" / category
+            self.assertTrue(target.is_symlink())
+            self.assertFalse(target.exists(), "cleanup must start with genuinely dangling repo links")
         for dep in self.config["dependencies"]:
             dep["link"] = False
         self.save()
@@ -647,6 +763,7 @@ class OrbitCLIContracts(OrbitCLIFixture):
         self.assertEqual(outside.read_text(), "must remain outside")
 
     def test_internal_symlink_is_preserved_as_a_symlink(self):
+        self.use_native_short_cache_path()
         os.symlink("SKILL.md", self.upstream / "skills/alpha/alias")
         self.commit("internal symlink fixture")
         self.orbit("vendor", "sync")
@@ -654,6 +771,21 @@ class OrbitCLIContracts(OrbitCLIFixture):
         alias = self.root / "mirror/skills/alias"
         self.assertTrue(alias.is_symlink())
         self.assertEqual(os.readlink(alias), "SKILL.md")
+
+    def test_internal_directory_symlink_preserves_type_before_target_is_copied(self):
+        directory = self.upstream / "skills/alpha/z-directory"
+        directory.mkdir()
+        (directory / "content").write_bytes(b"directory target\n")
+        os.symlink("z-directory", self.upstream / "skills/alpha/a-alias", target_is_directory=True)
+        self.commit("internal directory symlink fixture")
+        self.orbit("vendor", "sync")
+        alias = self.root / "mirror/skills/a-alias"
+        self.assertTrue(alias.is_symlink())
+        self.assertTrue(alias.is_dir())
+        self.assertEqual(os.readlink(alias), "z-directory")
+        self.assertEqual((alias / "content").read_bytes(), b"directory target\n")
+        self.orbit("sync")
+        self.assertEqual(self.git(self.remote, "show", "main:skills/a-alias"), "z-directory")
 
     def test_ignore_rules_exclude_files_without_implicitly_excluding_dotenv(self):
         (self.root / ".orbitignore").write_text("SKILL.md\n")
@@ -709,7 +841,7 @@ class OrbitCLIContracts(OrbitCLIFixture):
 
     def test_submodule_is_reported_as_unsupported(self):
         (self.upstream / ".gitmodules").write_text(
-            '[submodule "embedded"]\n\tpath = embedded\n\turl = ' + str(self.upstream) + '\n')
+            '[submodule "embedded"]\n\tpath = embedded\n\turl = ' + self.upstream.as_posix() + '\n')
         self.git(self.upstream, "add", ".gitmodules")
         self.git(self.upstream, "update-index", "--add", "--cacheinfo", "160000," + self.first + ",embedded")
         self.git(self.upstream, "commit", "-m", "submodule fixture")

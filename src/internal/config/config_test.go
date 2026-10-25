@@ -46,3 +46,31 @@ func TestAncestorSymlinksCannotBeManagedStorage(t *testing.T) {
 		t.Fatalf("must protect outside directory: %v", err)
 	}
 }
+
+func TestDuplicateYAMLKeysAreRejected(t *testing.T) {
+	for _, input := range []string{
+		"version: '1.0'\nglobal_cache: cache\nglobal_cache: other\ndependencies: []\n",
+		"version: '1.0'\nglobal_cache: cache\ndependencies: [{name: fixture, source: upstream, source: other, version: main}]\n",
+	} {
+		if _, err := Parse([]byte(input)); err == nil {
+			t.Fatalf("duplicate keys could silently change managed storage: %s", input)
+		}
+	}
+}
+
+func TestOverlappingManagedPathsAreRejected(t *testing.T) {
+	for _, input := range []string{
+		"version: '1.0'\nglobal_cache: storage\norbit_repo: {remote: synthetic, branch: main, local_path: storage/repo}\ndependencies: []\n",
+		"version: '1.0'\nglobal_cache: cache\nlink_targets: {skills: [cache/skills]}\ndependencies: [{name: fixture, source: upstream, version: main, mirror_dir: skills, link: true}]\n",
+		"version: '1.0'\nglobal_cache: cache\ndependencies: [{name: first, source: upstream, version: main, mirror_dir: skills}, {name: second, source: upstream, version: main, mirror_dir: skills/nested}]\n",
+	} {
+		c, err := Parse([]byte(input))
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.Path = filepath.Join(t.TempDir(), "orbit.yaml")
+		if err = c.Resolve(); err == nil || !strings.Contains(err.Error(), "overlap") {
+			t.Fatalf("overlapping paths must not share ownership: %v", err)
+		}
+	}
+}

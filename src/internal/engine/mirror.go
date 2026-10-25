@@ -78,6 +78,10 @@ func parseManifest(b []byte) (Manifest, error) {
 }
 
 func copyAsset(source, dest, mirrorDir string, matcher *ignore.GitIgnore) error {
+	root, err := filepath.EvalSymlinks(source)
+	if err != nil {
+		return err
+	}
 	return filepath.WalkDir(source, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -127,11 +131,15 @@ func copyAsset(source, dest, mirrorDir string, matcher *ignore.GitIgnore) error 
 			if err != nil {
 				return err
 			}
-			relative, err := filepath.Rel(source, resolved)
+			relative, err := filepath.Rel(root, resolved)
 			if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 				return fmt.Errorf("symlink escapes selected asset: %s", path)
 			}
-			return os.Symlink(target, out)
+			info, err := os.Stat(resolved)
+			if err != nil {
+				return err
+			}
+			return mirrorSymlink(target, out, info.IsDir())
 		}
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("unsupported file type: %s", path)
