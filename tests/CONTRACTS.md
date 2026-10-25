@@ -8,7 +8,9 @@ The CLI contracts are in `acceptance/test_cli.py`, configuration repair contract
 | --- | --- |
 | Complete operational lifecycle and failure reporting | `test_operational_chain_publishes_edits_and_preserves_links_after_clean`, `test_operational_check_reports_missing_wrong_links_and_dirty_cache` |
 | Version without configuration or Git | `test_version_requires_neither_configuration_nor_git` |
-| Init preservation, home/project discovery and strict configuration | `test_init_creates_template_and_preserves_existing_configuration`, `test_default_init_and_config_discovery_use_orbit_home_directory`, `test_parent_config_discovery_uses_config_relative_paths`, config Go tests |
+| Init preservation, global default, explicit project selection and strict configuration | `test_init_creates_template_and_preserves_existing_configuration`, `test_default_init_and_config_discovery_use_orbit_home_directory`, `test_explicit_project_config_uses_config_relative_paths`, `TestDefaultConfigIgnoresProjectAndParentCopies`, config Go tests |
+| Read-only duplicate detection, differing versions, missing assets and collection exclusions | The four `test_duplicate_check_*` contracts protect byte/name distinctions, retained unique skills and unchanged excluded files |
+| Visible link actions and publication progress | `test_link_output_describes_creation_unchanged_and_disabled_cleanup`, `test_sync_output_distinguishes_commit_push_and_no_local_changes` |
 | All asset categories and selected-ref downloads | `test_vendor_sync_materializes_all_categories_without_commit_or_push`, `test_vendor_downloads_only_selected_ref_without_unrelated_history` |
 | Canonical refs, legacy compatibility and strict controls | `TestDependencyRefCompatibilityAndStrictControls`, `test_ref_migration_reuses_installed_assets_and_cache` |
 | Vendor opt-out preserves local assets, manifests, links and publication | `test_vendor_false_preserves_local_edits_manifest_and_publication`, `test_disabled_vendors_skip_unavailable_sources_and_missing_assets_fail_link` |

@@ -106,3 +106,34 @@ func TestDependencyRefCompatibilityAndStrictControls(t *testing.T) {
 		})
 	}
 }
+
+func TestDefaultConfigIgnoresProjectAndParentCopies(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	global := filepath.Join(home, ".orbit", "orbit.yaml")
+	if err := os.MkdirAll(filepath.Dir(global), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(global, []byte("global"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	project := filepath.Join(t.TempDir(), "orbit.yaml")
+	if err := os.WriteFile(project, []byte("project"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Find(filepath.Dir(project), "")
+	if err != nil || got != global {
+		t.Fatalf("project copy must not shadow global config: %q %v", got, err)
+	}
+	got, err = Find(filepath.Dir(project), project)
+	if err != nil || got != project {
+		t.Fatalf("explicit project config ignored: %q %v", got, err)
+	}
+	if err := os.Remove(global); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = Find(filepath.Dir(project), ""); err == nil {
+		t.Fatal("missing global config must not silently adopt a project copy")
+	}
+}

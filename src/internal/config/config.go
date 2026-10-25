@@ -41,33 +41,20 @@ type Config struct {
 	Path         string              `yaml:"-"`
 }
 
-func Find(start, explicit string) (string, error) {
+// Find uses the global configuration unless the caller explicitly selects a file.
+func Find(_ string, explicit string) (string, error) {
 	if explicit != "" {
 		return filepath.Abs(explicit)
 	}
-	dir, err := filepath.Abs(start)
+	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	for {
-		p := filepath.Join(dir, "orbit.yaml")
-		if _, err := os.Stat(p); err == nil {
-			return p, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
+	path := filepath.Join(home, ".orbit", "orbit.yaml")
+	if _, err := os.Stat(path); err != nil {
+		return "", fmt.Errorf("global configuration %s unavailable; run orbit init or use --config: %w", path, err)
 	}
-	home, err := os.UserHomeDir()
-	if err == nil {
-		p := filepath.Join(home, ".orbit", "orbit.yaml")
-		if _, err = os.Stat(p); err == nil {
-			return p, nil
-		}
-	}
-	return "", fmt.Errorf("orbit.yaml not found in project parents or ~/.orbit; run orbit init or use --config")
+	return path, nil
 }
 
 func Load(path string) (*Config, error) {

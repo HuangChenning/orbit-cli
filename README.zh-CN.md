@@ -98,10 +98,12 @@ orbit check
 | `orbit vendor sync` | 下载上游并组装本地资产 | `--name <name>` / `--label <label>`、`--jobs <n>` |
 | `orbit link` | 按 `link` 开关建立或移除匹配的链接 | `--name <name>` / `--label <label>`、`--force` |
 | `orbit sync` | 将本地资产提交并推送到个人远端 | `--name <name>` / `--label <label>`、`--message <text>` |
-| `orbit check` | 检查缓存与启用的链接 | 显式 Axon 输入下支持 `--fix` |
+| `orbit check` | 检查缓存与启用的链接，或检查重复声明和技能 | `--duplicates`；显式 Axon 输入下支持 `--fix` |
 | `orbit clean` | 预览并确认清理选中的受管理缓存 | `--name <name>` / `--label <label>`、`--yes` |
 
 使用 `--name` 按资产名称精确选择，或用 `--label` 按可选标签分组选择，二者互斥。两个参数都支持英文逗号列表和重复传参，会去除各项首尾空白、自动去重，并按 **OR** 取并集。名称和标签区分大小写；未知名称、标签零匹配、空项和中文逗号 `，` 均报错。筛选也适用于 `link`、`sync`、`check`、`clean`；显式 Axon 覆盖校验及修复始终比较完整配置。Vendor 下载默认最多 4 个并发 Git 操作。Git 操作默认超时两分钟，可用 `--timeout` 调整。
+
+`link` 显示所用配置、每个资产的操作计数及最终汇总，区分创建、替换、未变化、移除、保留、原本不存在和失败。`sync` 显示资产校验、新提交 ID 或无本地变化提示、推送进度及成功结果。快照未变化时仍会重试推送已有提交；失败返回非零退出码。
 
 Vendor 下载只获取配置指定 Git ref 的浅层快照，不拉取全部分支和完整历史。缓存属于内部实现，日常使用 `~/.orbit/repo` 中组装后的文件。
 
@@ -135,7 +137,7 @@ orbit clean
 | `~/.orbit/cache` | 按来源和版本共享的 Git 缓存 |
 | `~/.orbit/repo` | 下载后的资产，按 `mirror_dir` 组织为 skills、workflows、scripts、commands 等目录 |
 
-配置查找优先级：`--config <file>` → 最近的项目或父目录 `orbit.yaml` → 全局配置。相对路径以配置文件所在目录为基准，支持 `~/...`。
+资产命令默认只读取 `~/.orbit/orbit.yaml`，项目或父目录中的配置不会覆盖它。需要使用其他文件时显式执行 `orbit --config ./orbit.yaml link`。相对路径以所选配置文件所在目录为基准，支持 `~/...`。
 
 `link_targets` 在全局按类别声明工具根目录；依赖只设置 `link` 开关。`mirror_dir` 的首段选择类别，其余路径拼接到各工具根目录。
 
@@ -238,6 +240,19 @@ orbit sync
 - `sync` 发布当前受管理的本地资产，包括你的修改，不要求缓存存在，也不访问上游依赖。未管理文件的工作区修改及已有暂存修改需手工处理。仓库根目录中未跟踪的 `.DS_Store` 会保留且不发布，即使它已被 Git 忽略；已跟踪或已暂存的修改仍需手工处理。`--name` 或 `--label` 只暂存选中资产及其 manifest 条目，其他本地修改留待后续发布。
 - `.orbit-manifest.yaml` 记录组装时的上游来源和实际提交，不代表后续本地修改仍与该提交一致。内容未变时不创建空提交；推送失败保留本地提交以便重试。Git 属性或 filter 转换资产字节时拒绝发布，清除本次暂存并保留本地文件。
 
+## 检查重复配置与技能
+
+```sh
+orbit check --duplicates
+orbit check --duplicates --name core-skill,go-review
+```
+
+该命令输出只读 JSON，检查重复的 `source` / `ref` / `subdir` 声明、同一来源与 ref 下嵌套的目录选择、跨资产的同名技能及字节完全一致的 `SKILL.md`。技能名称优先读取 YAML frontmatter，缺失时使用所在目录名。字节一致仅表示该文件相同，不代表整个技能目录等价。未知字段、重复 YAML 键和重复依赖名称仍作为配置错误拒绝。
+
+检查读取 `orbit_repo.local_path` 中已有的文件，应用配置旁 `.orbitignore`，并报告排除数量和未能验证的资产。若集合中重叠的子目录已被完整排除，则不再报告该嵌套来源重叠。检查不下载、不比较上游版本、不修改配置、不删除文件，也不跟随软链接。JSON `status` 为 `ok`、`differences` 或 `incomplete`；后两种返回非零退出码。`--duplicates` 不能与 `--fix` 或 Axon 覆盖校验参数混用。
+
+去重时保留首选来源，并使用 `skills/collection/copied-skill/` 这样的仓库相对规则排除集合中的冗余副本。仅调整声明和排除规则时，已下载文件会保留；之后执行 `vendor sync` 才会在替换受管理资产时应用规则。工具软链接需另行执行 `link` 才会变化。若需要后续通过 `link: false` 清理已有的自有链接，应保留对应的禁用声明。
+
 ## 从 Axon 校验与修复
 
 日常命令以 Orbit 配置为准。提供显式 Axon 输入后，可核对 vendor 声明及 Hub 已提交的四类资产，发现缺失依赖、工具映射、来源冲突和未覆盖文件：
@@ -260,7 +275,7 @@ orbit check --axon-config "$HOME/.axon/axon.yaml" \
 
 ## 版本发布与二进制安装
 
-从 [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases) 下载稳定版安装包，本文档对应 **v1.1.0**。成功的 [Stable release checks 工作流](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml) 也提供供审核的候选产物；候选产物经批准且验证合并后的提交后才正式发布。
+从 [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases) 下载稳定版安装包，当前已发布版本为 **v1.1.0**；本文所述重复检查、仅默认读取全局配置及 link/sync 输出增强属于尚未发布的源码变更。成功的 [Stable release checks 工作流](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml) 也提供供审核的候选产物；候选产物经批准且验证合并后的提交后才正式发布。
 
 | 平台 | 压缩包 |
 | --- | --- |

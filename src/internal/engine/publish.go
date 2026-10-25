@@ -152,6 +152,7 @@ func (e *Engine) Publish(ctx context.Context, deps []config.Dependency, full, fo
 		if err = copyAsset(source, destination, d.MirrorDir, nil); err != nil {
 			return err
 		}
+		fmt.Fprintln(e.Out, "validated", d.Name, "at", d.MirrorDir)
 		entries = append(entries, entry)
 		selected[d.Name] = true
 		paths[d.MirrorDir] = true
@@ -239,8 +240,16 @@ func (e *Engine) Publish(ctx context.Context, deps []config.Dependency, full, fo
 		if _, err = e.git(ctx, r.LocalPath, "-c", "core.hooksPath="+os.DevNull, "commit", "-m", message); err != nil {
 			return err
 		}
+		commit, err := e.git(ctx, r.LocalPath, "rev-parse", "--short", "HEAD")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(e.Out, "committed", commit)
+	} else {
+		fmt.Fprintln(e.Out, "no local changes; checking push of existing commits")
 	}
 	committed = true
+	fmt.Fprintln(e.Out, "pushing origin branch", r.Branch)
 	args := []string{"push"}
 	if force {
 		args = append(args, "--force")
@@ -249,6 +258,7 @@ func (e *Engine) Publish(ctx context.Context, deps []config.Dependency, full, fo
 	if _, err = e.git(ctx, r.LocalPath, args...); err != nil {
 		return fmt.Errorf("sync push failed; check remote credentials/SSH keys; local commit retained for retry: %w", err)
 	}
+	fmt.Fprintln(e.Out, "push succeeded:", r.Branch)
 	fmt.Fprintln(e.Out, "published", len(entries), "dependencies")
 	return nil
 }

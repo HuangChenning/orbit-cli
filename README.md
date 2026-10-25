@@ -98,10 +98,12 @@ The downloaded files appear in `~/.orbit/repo/skills/skill-creator`. This exampl
 | `orbit vendor sync` | Download upstream and assemble local assets | `--name <name>` / `--label <label>`, `--jobs <n>` |
 | `orbit link` | Create or remove matching links according to the `link` switch | `--name <name>` / `--label <label>`, `--force` |
 | `orbit sync` | Commit and push local assets to your personal remote | `--name <name>` / `--label <label>`, `--message <text>` |
-| `orbit check` | Check the cache and enabled links | `--fix` with explicit Axon inputs |
+| `orbit check` | Check the cache and enabled links, or inspect duplicate selections | `--duplicates`; `--fix` with explicit Axon inputs |
 | `orbit clean` | Preview and confirm deletion of selected managed caches | `--name <name>` / `--label <label>`, `--yes` |
 
 Use `--name` for exact asset names or `--label` for optional groups; the two flags are mutually exclusive. Both accept English-comma lists and repeated flags, trim surrounding whitespace, deduplicate values and use **OR** matching. Names and labels are case-sensitive. Unknown names, no matching labels, empty list items and Chinese commas (`，`) are errors. Selection also applies to `link`, `sync`, `check` and `clean`; explicit Axon coverage checks/repairs always compare the full configuration. Vendor downloads run at most 4 concurrent Git operations by default. Each Git operation has a two-minute timeout, adjustable with `--timeout`.
+
+`link` prints the selected configuration, per-asset action counts and a final summary: created, replaced, unchanged, removed, preserved, absent or failed. `sync` prints asset validation, the new commit ID or a no-local-changes message, push progress and success. An unchanged snapshot still retries the push of an existing commit. Failures return a nonzero exit code.
 
 Vendor downloads fetch a shallow snapshot of the configured Git ref, rather than every upstream branch and its full history. The cache is internal; use the assembled files under `~/.orbit/repo`.
 
@@ -135,7 +137,7 @@ In the source repository, Go code lives in `src/main.go` and `src/internal/`. Yo
 | `~/.orbit/cache` | Git cache shared by source and version |
 | `~/.orbit/repo` | Downloaded assets under `skills/`, `workflows/`, `scripts/`, and `commands/`, according to `mirror_dir` |
 
-Configuration lookup order: `--config <file>` → nearest `orbit.yaml` in the project or its parent directories → global configuration. Relative paths resolve from the configuration file's directory. Paths starting with `~/` are supported.
+Asset commands default to `~/.orbit/orbit.yaml`. Project and parent-directory files do not override it. Use `orbit --config ./orbit.yaml link` to select another file explicitly. Relative paths resolve from the selected configuration file's directory. Paths starting with `~/` are supported.
 
 Declare tool root directories once in the global `link_targets`, grouped by category. Each dependency uses a `link` switch. The first segment of `mirror_dir` selects the category; the remaining path is appended to each tool root.
 
@@ -238,6 +240,19 @@ orbit sync
 - `sync` publishes the current managed local assets, including your edits, without requiring the cache or contacting upstream dependencies. Unmanaged working-tree changes and existing staged changes must be handled manually. An untracked `.DS_Store` at the repository root is preserved without being published, even when Git ignores it; tracked or staged changes to it still require manual handling. `--name` or `--label` stages only selected assets and their manifest entries, leaving other local changes pending.
 - `.orbit-manifest.yaml` records upstream sources and resolved commits used for assembly; it does not claim that later local edits match those commits. Unchanged content produces no empty commit. A failed push retains the local commit for retry. Git attributes or filters that transform asset bytes cause publication to fail and clear its staging changes while preserving local files.
 
+## Check duplicate selections
+
+```sh
+orbit check --duplicates
+orbit check --duplicates --name core-skill,go-review
+```
+
+This read-only JSON report lists repeated `source`/`ref`/`subdir` selections, nested selections from the same source/ref, repeated skill names and identical `SKILL.md` bytes across configured assets. Names come from YAML frontmatter, falling back to the containing folder. Matching bytes describe that file only; they do not prove that complete skill directories are equivalent. Unknown fields, duplicate YAML keys and duplicate dependency names remain configuration errors.
+
+The scan uses available files under `orbit_repo.local_path`, honors the adjacent `.orbitignore`, and reports excluded paths and unverified assets. A collection subtree fully excluded by those rules does not count as a nested source overlap. It does not download, compare upstream versions, edit configuration, delete files or follow symlinks. JSON `status` is `ok`, `differences` or `incomplete`; differences and incomplete scans return a nonzero exit code. `--duplicates` cannot be combined with `--fix` or Axon coverage options.
+
+To reduce duplicates, retain the preferred source and exclude redundant collection subdirectories with repo-relative rules such as `skills/collection/copied-skill/`. Changing declarations and exclusions preserves downloaded files immediately; a later `vendor sync` applies them when replacing managed assets. Existing tool links remain until a separate `link` operation. Keep a disabled declaration if you want `link: false` to remove its owned links later.
+
 ## Check and repair an Axon migration
 
 Everyday commands use the Orbit configuration. With explicit Axon inputs, check vendor declarations and the Hub's committed assets in all four categories for missing dependencies, tool mappings, source conflicts, and uncovered files:
@@ -260,7 +275,7 @@ Add `--repo "$HOME/.orbit/repo"` to either command to compare the local reposito
 
 ## Releases and binary installation
 
-Download stable packages from [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases). This documentation covers **v1.1.0**. Review candidates are also available from successful [Stable release checks runs](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml); candidate artifacts are published only after approval and verification of the merged commit.
+Download stable packages from [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases). The latest published version is **v1.1.0**. Duplicate inspection, global-only configuration defaults and expanded link/sync output described here are unreleased source changes. Review candidates are also available from successful [Stable release checks runs](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml); candidate artifacts are published only after approval and verification of the merged commit.
 
 | Platform | Archive |
 | --- | --- |
