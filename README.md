@@ -39,6 +39,8 @@ $ orbit check
 
 Install with [Homebrew](https://brew.sh) on macOS (Apple Silicon / Intel) or Linux amd64:
 
+On Ubuntu, [install Homebrew first](#ubuntu-brew-command-not-found) if `brew` is unavailable.
+
 ```sh
 brew install HuangChenning/tap/orbit
 orbit --version
@@ -332,6 +334,61 @@ orbit update
 Updates follow the latest **stable** GitHub Release for your operating system and architecture. Pre-releases are excluded. Orbit verifies the matching archive against the release's `SHA256SUMS` before installing; an equal or newer installed stable version is kept. A development build can move to a published stable version. These commands require HTTPS access to GitHub, without an asset configuration or Git connection.
 
 If no stable Release is available, update checks report that explicitly. CI candidate artifacts are not selected by the updater. Download, checksum or extraction failures preserve the installed program. Installation uses a temporary file beside the actual executable and requires write permission to that directory; no privilege elevation is attempted. If Windows keeps the old running program locked, Orbit reports the retained backup path for removal after the old process exits. SHA256 verifies integrity; the packages remain unsigned.
+
+## Troubleshooting and moving to another machine
+
+### Ubuntu: brew command not found
+
+Ubuntu does not include Homebrew by default. Install its prerequisites and run the [official installer](https://brew.sh):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential procps curl file git
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+Follow the installer's next steps. For the standard Linux location with Bash, make Brew available now and in future terminals:
+
+```bash
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.bashrc
+brew --version
+brew install HuangChenning/tap/orbit
+```
+
+If Homebrew is already installed at that location, only the PATH setup is needed. Use `~/.zshrc` instead of `~/.bashrc` for Zsh; add the startup line once. See [Homebrew on Linux](https://docs.brew.sh/Homebrew-on-Linux). Orbit's Linux package supports x86_64/amd64; Linux ARM64 is not currently available.
+
+### Homebrew: refusing to write insecure trust store
+
+If installation reports that `~/.homebrew` is “group or world writable”, restrict that directory and any existing trust file, then retry:
+
+```bash
+chmod 700 "$HOME/.homebrew"
+if [ -f "$HOME/.homebrew/trust.json" ]; then
+  chmod 600 "$HOME/.homebrew/trust.json"
+fi
+brew install HuangChenning/tap/orbit
+```
+
+These paths apply to the reported `~/.homebrew` location; if the error names another trust-store location, use that path instead. If `chmod` fails, inspect `ls -ld "$HOME/.homebrew"` and resolve ownership with the system administrator. Do not run Brew with `sudo`. A fully qualified installation trusts the named formula automatically; see [Homebrew tap trust](https://docs.brew.sh/Tap-Trust).
+
+An `orbit: command not found` error after a failed Brew installation means the executable is not yet available. Once installation succeeds, run `orbit --version` and `orbit init`. If the executable still cannot be found, check `command -v brew` and `"$(brew --prefix orbit)/bin/orbit" --version`, then correct PATH.
+
+### Configure the personal repository on a new machine
+
+Run `orbit init`, then edit `~/.orbit/orbit.yaml`. Set `orbit_repo.remote` to your existing personal repository's HTTPS or SSH URL, `branch` to its destination branch (for example `main`), and `local_path` to `~/.orbit/repo`. The repository must exist and this machine's Git credentials must permit access; private repositories require authentication even for downloads. See [Publish to GitHub](#publish-to-github) for the YAML example.
+
+To reuse an existing setup, transfer the old machine's `~/.orbit/orbit.yaml` and its adjacent `.orbitignore`, if present, to the new machine. Review any existing destination files before replacing them. Keep the dependency declarations and exclusions, adjust machine-specific absolute paths, and keep only relevant tool paths in `link_targets`. `~` resolves to the current user's home, such as `/home/ubuntu` on Ubuntu. `orbit init` creates a starter configuration; it does not retrieve your previous configuration from the personal asset repository.
+
+With the configuration reviewed, run:
+
+```sh
+orbit vendor sync
+orbit link
+orbit check
+```
+
+`vendor sync` downloads configured upstream assets into `~/.orbit/repo`; refreshed managed assets match upstream, discarding local edits. `link` creates the configured tool links. When you intend to commit and push local managed assets to the personal remote, run `orbit sync` separately.
 
 ## Development checks
 

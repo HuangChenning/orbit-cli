@@ -39,6 +39,8 @@ $ orbit check
 
 在 macOS（Apple Silicon / Intel）或 Linux amd64 上使用 [Homebrew](https://brew.sh) 安装：
 
+Ubuntu 如果还没有 `brew` 命令，请[先安装 Homebrew](#ubuntu提示找不到-brew-命令)。
+
 ```sh
 brew install HuangChenning/tap/orbit
 orbit --version
@@ -332,6 +334,61 @@ orbit update
 更新只跟随 GitHub 最新**稳定 Release**，按本机系统与架构选择包，排除预发布版本。Orbit 安装前对照 Release 的 `SHA256SUMS` 校验压缩包；当前稳定版本相同或更新时保留当前程序，开发构建可以升级到已发布稳定版。这两个命令需要通过 HTTPS 访问 GitHub，无需资产配置或 Git 连接。
 
 如果尚无稳定 Release，检查更新会明确提示；CI 候选产物不会被在线更新选中。下载、校验或解包失败时保留当前程序，安装在实际可执行文件所在目录使用临时文件，需要该目录的写权限，不尝试提权。若 Windows 锁定旧的运行程序，Orbit 会提示保留的备份路径，可在旧进程结束后删除。SHA256 用于完整性校验，安装包仍未签名。
+
+## 常见问题与跨设备迁移
+
+### Ubuntu：提示找不到 brew 命令
+
+Ubuntu 默认不带 Homebrew。先安装依赖，再运行[官方安装脚本](https://brew.sh)：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential procps curl file git
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+按照安装器的后续提示配置环境。使用标准 Linux 安装路径和 Bash 时，执行以下命令，让当前及后续终端都能找到 Brew：
+
+```bash
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.bashrc
+brew --version
+brew install HuangChenning/tap/orbit
+```
+
+如果已经在该位置安装过 Homebrew，只需配置 PATH。Zsh 用户将 `~/.bashrc` 换成 `~/.zshrc`；启动文件中的这一行添加一次即可。详见 [Homebrew Linux 文档](https://docs.brew.sh/Homebrew-on-Linux)。Orbit 当前的 Linux 安装包支持 x86_64/amd64，暂不支持 Linux ARM64。
+
+### Homebrew：拒绝写入不安全的信任文件
+
+如果安装时报错 `Refusing to write insecure trust store`，并指出 `~/.homebrew` 为 `group or world writable`，收紧目录及已有信任文件的权限后重试：
+
+```bash
+chmod 700 "$HOME/.homebrew"
+if [ -f "$HOME/.homebrew/trust.json" ]; then
+  chmod 600 "$HOME/.homebrew/trust.json"
+fi
+brew install HuangChenning/tap/orbit
+```
+
+上述路径适用于报错中的 `~/.homebrew`；若报错指向其他信任文件位置，请按实际路径处理。如果 `chmod` 失败，先用 `ls -ld "$HOME/.homebrew"` 检查归属，再联系系统管理员修复。不要使用 `sudo` 运行 Brew。以完整名称安装会自动信任对应 Formula，详见 [Homebrew tap 信任说明](https://docs.brew.sh/Tap-Trust)。
+
+Brew 安装失败后出现 `orbit: command not found`，表示程序尚不可用。安装成功后再执行 `orbit --version` 和 `orbit init`。如果仍找不到程序，用 `command -v brew` 和 `"$(brew --prefix orbit)/bin/orbit" --version` 检查安装位置，再修正 PATH。
+
+### 在新机器上配置个人仓库
+
+先运行 `orbit init`，再编辑 `~/.orbit/orbit.yaml`。将 `orbit_repo.remote` 设置为已有个人仓库的 HTTPS 或 SSH 地址，`branch` 设置为目标分支（例如 `main`），`local_path` 设置为 `~/.orbit/repo`。远端仓库需要已存在，且当前机器的 Git 凭证有访问权限；私有仓库在下载时也需要认证。YAML 示例见[提交推送到 GitHub](#提交推送到-github)。
+
+复用旧机器配置时，将旧机器的 `~/.orbit/orbit.yaml` 以及同目录的 `.orbitignore`（如有）传到新机器；替换前先检查目标位置已有文件。保留依赖声明和排除规则，调整机器专属的绝对路径，并在 `link_targets` 中只保留当前机器实际使用的工具目录。`~` 会解析为当前用户的主目录，例如 Ubuntu 上的 `/home/ubuntu`。`orbit init` 只生成初始模板，不会从个人资产仓库自动获取旧配置。
+
+检查配置后执行：
+
+```sh
+orbit vendor sync
+orbit link
+orbit check
+```
+
+`vendor sync` 将配置的上游资产下载到 `~/.orbit/repo`，刷新的受管理资产会恢复为上游内容并丢弃本地修改；`link` 建立配置的工具链接。需要将本地受管理资产提交并推送到个人仓库时，再单独执行 `orbit sync`。
 
 ## 开发检查
 
