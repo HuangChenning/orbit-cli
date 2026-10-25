@@ -106,6 +106,11 @@ func (e *Engine) Pull(ctx context.Context, updateConfig bool) error {
 	if err != nil {
 		return err
 	}
+	if !initial {
+		if err = e.inheritPullCheckout(ctx, stage); err != nil {
+			return err
+		}
+	}
 	if _, err = e.git(ctx, stage, "-c", "core.hooksPath="+os.DevNull, "checkout", "-B", r.Branch, commit); err != nil {
 		return err
 	}
@@ -265,4 +270,44 @@ func (e *Engine) validatePull(ctx context.Context, stage string) ([]config.Depen
 		return nil, err
 	}
 	return deps, nil
+}
+
+// A plain clone omits repository-local filters and info/attributes. Reproduce
+// checkout settings so byte validation covers what the real fast-forward does.
+func (e *Engine) inheritPullCheckout(ctx context.Context, stage string) error {
+	local := e.Config.OrbitRepo.LocalPath
+	settings, err := e.git(ctx, local, "config", "--null", "--list")
+	if err != nil {
+		return err
+	}
+	for _, record := range strings.Split(settings, "\x00") {
+		key, value, _ := strings.Cut(record, "\n")
+		if !strings.HasPrefix(key, "filter.") && key != "core.attributesfile" {
+			continue
+		}
+		if key == "core.attributesfile" && value != "" {
+			value, err = e.git(ctx, local, "config", "--path", "--get", key)
+			if err != nil {
+				return err
+			}
+			if !filepath.IsAbs(value) {
+				value = filepath.Join(local, value)
+			}
+		}
+		if _, err = e.git(ctx, stage, "config", "--local", "--", key, value); err != nil {
+			return err
+		}
+	}
+	attributes, err := os.ReadFile(filepath.Join(local, ".git", "info", "attributes"))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	dest := filepath.Join(stage, ".git", "info", "attributes")
+	if err = config.NoSymlinks(dest); err != nil {
+		return err
+	}
+	return os.WriteFile(dest, attributes, 0600)
 }

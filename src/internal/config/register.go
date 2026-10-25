@@ -46,8 +46,8 @@ func (c *Config) RegisterDependencies(original []byte, incoming []Dependency, up
 				return nil, fmt.Errorf("configuration conflict for %s:\nlocal:  source=%q ref=%q subdir=%q mirror_dir=%q\nremote: source=%q ref=%q subdir=%q mirror_dir=%q\nreview both and retry with --update-config to accept remote identity (local switches and labels are preserved)", d.Name, old.Source, old.Ref, old.Subdir, old.MirrorDir, d.Source, d.Ref, d.Subdir, d.MirrorDir)
 			}
 			entry := sequence.Content[index]
-			if entry.Kind != yaml.MappingNode {
-				return nil, fmt.Errorf("%s must use an explicit YAML mapping to update its identity", d.Name)
+			if entry.Kind != yaml.MappingNode || entry.Anchor != "" {
+				return nil, fmt.Errorf("%s must use an explicit YAML mapping without anchors/aliases to update its identity", d.Name)
 			}
 			// Replace identity fields only. Keep local booleans/labels and comments.
 			fields := []struct{ key, value string }{{"source", d.Source}, {"ref", d.Ref}, {"subdir", d.Subdir}, {"mirror_dir", d.MirrorDir}}
@@ -56,6 +56,10 @@ func (c *Config) RegisterDependencies(original []byte, incoming []Dependency, up
 				for i := 0; i < len(entry.Content); i += 2 {
 					key := entry.Content[i]
 					if key.Value == field.key || (field.key == "ref" && key.Value == "version") {
+						value := entry.Content[i+1]
+						if key.Kind != yaml.ScalarNode || key.Anchor != "" || value.Kind != yaml.ScalarNode || value.Anchor != "" {
+							return nil, fmt.Errorf("%s identity field %s uses a YAML anchor/alias; make identity fields explicit before --update-config to preserve unrelated declarations", d.Name, key.Value)
+						}
 						key.Value = field.key
 						entry.Content[i+1].Value, entry.Content[i+1].Tag = field.value, "!!str"
 						found = true

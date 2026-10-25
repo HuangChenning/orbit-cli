@@ -96,11 +96,26 @@ func (e *Engine) safeCleanRoot(root string) error {
 	if err != nil {
 		return err
 	}
-	if root == filepath.Dir(root) || sameNativePath(root, home) {
+	if root == filepath.Dir(root) || nativeWithin(home, root) {
 		return fmt.Errorf("refusing unsafe link cleanup root: %s", root)
 	}
-	if config.Overlap(root, e.Config.GlobalCache) || (e.Config.OrbitRepo != nil && config.Overlap(root, e.Config.OrbitRepo.LocalPath)) {
+	if nativeOverlap(root, e.Config.GlobalCache) || (e.Config.OrbitRepo != nil && nativeOverlap(root, e.Config.OrbitRepo.LocalPath)) {
 		return fmt.Errorf("link cleanup root overlaps managed storage: %s", root)
 	}
 	return nil
+}
+
+func nativeOverlap(a, b string) bool { return nativeWithin(a, b) || nativeWithin(b, a) }
+
+func nativeWithin(path, parent string) bool {
+	for {
+		if sameNativePath(path, parent) {
+			return true
+		}
+		next := filepath.Dir(path)
+		if next == path {
+			return false
+		}
+		path = next
+	}
 }

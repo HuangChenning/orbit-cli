@@ -9,6 +9,7 @@ import stat
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import shutil
 import time
@@ -394,6 +395,77 @@ class OrbitCLIContracts(OrbitCLIFixture):
         registered = yaml.safe_load(self.path.read_text())["dependencies"]
         self.assertEqual(registered[0], extra)
         self.assertEqual(len(registered), 5)
+
+    def test_pull_rejects_anchored_identity_updates_without_changing_unrelated_declarations(self):
+        self.orbit("vendor", "sync")
+        self.orbit("sync")
+        self.config["orbit_repo"]["local_path"] = str(self.root / "receiver")
+        existing = dict(self.config["dependencies"][0], source="placeholder-source", link=False)
+        existing["ref"] = existing.pop("version")
+        extra = dict(existing, name="unrelated", mirror_dir="other-assets/example")
+        self.config["dependencies"] = [existing, extra]
+        self.save()
+        text = self.path.read_text()
+        scalar_anchor = text.replace("source: placeholder-source", "source: &local_source /fixture/local-original", 1)
+        scalar_anchor = scalar_anchor.replace("source: placeholder-source", "source: *local_source", 1)
+        mapping_anchor = text.replace("- name: skills", "- &local_asset\n  name: skills", 1)
+        mapping_anchor = mapping_anchor.replace("- name: unrelated", "- <<: *local_asset\n  name: unrelated", 1)
+        # The second mapping inherits source from the first anchored dependency.
+        position = mapping_anchor.index("- <<: *local_asset")
+        mapping_anchor = mapping_anchor[:position] + mapping_anchor[position:].replace("  source: placeholder-source\n", "", 1)
+        for anchored in (scalar_anchor, mapping_anchor):
+            with self.subTest(anchored=anchored):
+                self.path.write_text(anchored)
+                before = self.path.read_bytes()
+                result = self.orbit("pull", "--update-config", success=False)
+                self.assertIn("anchor", result.stderr)
+                self.assertEqual(self.path.read_bytes(), before)
+                self.assertFalse((self.root / "receiver").exists())
+
+    def test_pull_preflights_local_checkout_filters_before_advancing_head(self):
+        self.orbit("vendor", "sync")
+        self.orbit("sync")
+        repo = self.root / "mirror"
+        head = self.git(repo, "rev-parse", "HEAD")
+        before = self.path.read_bytes()
+        filter_path = self.root / "transform.py"
+        filter_path.write_text("import sys\nsys.stdout.buffer.write(sys.stdin.buffer.read().replace(b'remote', b'TRANSFORMED'))\n")
+        command = '"' + pathlib.Path(sys.executable).as_posix() + '" "' + filter_path.as_posix() + '"'
+        self.git(repo, "config", "filter.orbit-test.smudge", command)
+        (repo / ".git/info/attributes").write_text("skills/SKILL.md filter=orbit-test\n")
+        other = self.root / "other-device"
+        self.git(self.root, "clone", str(self.remote), str(other))
+        (other / "skills/SKILL.md").write_text("remote replacement\n")
+        self.git(other, "add", ".")
+        self.git(other, "commit", "-m", "remote replacement")
+        self.git(other, "push", "origin", "main")
+        self.orbit("pull", success=False)
+        self.assertEqual(self.git(repo, "rev-parse", "HEAD"), head)
+        self.assertEqual((repo / "skills/SKILL.md").read_bytes(), b"alpha-v1\n")
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_link_clean_checks_native_storage_identity_including_case_aliases(self):
+        protected = self.root / "Protected"
+        protected.mkdir()
+        source = self.root / "asset-source"
+        source.mkdir()
+        (protected / "keep").symlink_to(source, target_is_directory=True)
+        alias = self.root / "protected"
+        self.config["dependencies"] = []
+        self.config["global_cache"] = str(protected)
+        if alias.exists() and os.path.samefile(alias, protected):
+            self.config["link_targets"] = {"skills": [str(alias)]}
+            self.save()
+            self.orbit("link", "clean", "--yes", success=False)
+            self.assertTrue((protected / "keep").is_symlink())
+        else:
+            alias.mkdir()
+            (alias / "foreign").symlink_to(source, target_is_directory=True)
+            self.config["link_targets"] = {"skills": [str(alias)]}
+            self.save()
+            self.orbit("link", "clean", "--yes")
+            self.assertFalse((alias / "foreign").is_symlink())
+            self.assertTrue((protected / "keep").is_symlink())
 
     def test_ref_migration_reuses_installed_assets_and_cache(self):
         self.sync_link()
