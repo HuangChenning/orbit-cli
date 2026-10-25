@@ -186,9 +186,9 @@ orbit check --axon-config "$HOME/.axon/axon.yaml" \
 
 在上述命令中增加 `--repo "$HOME/.orbit/repo"` 可比较本地仓库的文件清单，报告未配置的仓内资产；它不验证文件字节或版本，也不猜测未知资产的来源。
 
-## 候选版本与二进制安装
+## 版本发布与二进制安装
 
-首个稳定候选版本为 **v1.0.0**，尚未发布稳定版。可从成功的 [Stable release checks 工作流](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml) 下载完整候选产物，供审核使用；正式发布仍需单独批准，并验证合并后的提交。
+从 [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases) 下载稳定版安装包，首个稳定版本为 **v1.0.0**。成功的 [Stable release checks 工作流](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml) 也提供供审核的候选产物；候选产物经批准且验证合并后的提交后才正式发布。
 
 | 平台 | 压缩包 |
 | --- | --- |
@@ -218,7 +218,7 @@ orbit update
 
 更新只跟随 GitHub 最新**稳定 Release**，按本机系统与架构选择包，排除预发布版本。Orbit 安装前对照 Release 的 `SHA256SUMS` 校验压缩包；当前稳定版本相同或更新时保留当前程序，开发构建可以升级到已发布稳定版。这两个命令需要通过 HTTPS 访问 GitHub，无需资产配置或 Git 连接。
 
-目前尚未发布稳定 Release，检查更新会明确提示暂无稳定版本；CI 候选产物不会被在线更新选中。下载、校验或解包失败时保留当前程序，安装在实际可执行文件所在目录使用临时文件，需要该目录的写权限，不尝试提权。若 Windows 锁定旧的运行程序，Orbit 会提示保留的备份路径，可在旧进程结束后删除。SHA256 用于完整性校验，安装包仍未签名。
+如果尚无稳定 Release，检查更新会明确提示；CI 候选产物不会被在线更新选中。下载、校验或解包失败时保留当前程序，安装在实际可执行文件所在目录使用临时文件，需要该目录的写权限，不尝试提权。若 Windows 锁定旧的运行程序，Orbit 会提示保留的备份路径，可在旧进程结束后删除。SHA256 用于完整性校验，安装包仍未签名。
 
 ## 开发检查
 

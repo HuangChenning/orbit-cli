@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.0.0 — Unreleased
+## v1.0.0 — 2026-10-25
 
 - Download and assemble Git-backed skills, workflows, scripts and commands with `orbit vendor sync`.
 - Link local assets to developer tools, including cleanup when a dependency's `link` switch is disabled.
@@ -13,4 +13,4 @@
 
 ### Compatibility
 
-This is the first stable release candidate; no stable GitHub Release has been published yet. Source builds target `./src` and require a maintained Go series (currently Go 1.26 or 1.27). Candidate packages built with Go 1.27 require macOS 13 or newer. See the READMEs for the actual native validation images and unsigned installation notes.
+This is the first stable release. Source builds target `./src` and require a maintained Go series (currently Go 1.26 or 1.27). Release packages built with Go 1.27 require macOS 13 or newer. See the READMEs for the actual native validation images and unsigned installation notes.

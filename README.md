@@ -186,9 +186,9 @@ Repair saves a byte-for-byte backup first and reports its changes. YAML comments
 
 Add `--repo "$HOME/.orbit/repo"` to either command to compare the local repository's file inventory and report unconfigured assets. This checks neither file bytes nor versions and does not guess unknown assets' sources.
 
-## Release candidates and binary installation
+## Releases and binary installation
 
-The first stable candidate is **v1.0.0**; a stable release has not been published. Download the complete candidate artifact from a successful [Stable release checks run](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml). Candidate artifacts are for review; publication requires a separate approval and verification of the merged commit.
+Download stable packages from [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases). The first stable version is **v1.0.0**. Review candidates are also available from successful [Stable release checks runs](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml); candidate artifacts are published only after approval and verification of the merged commit.
 
 | Platform | Archive |
 | --- | --- |
@@ -218,7 +218,7 @@ orbit update
 
 Updates follow the latest **stable** GitHub Release for your operating system and architecture. Pre-releases are excluded. Orbit verifies the matching archive against the release's `SHA256SUMS` before installing; an equal or newer installed stable version is kept. A development build can move to a published stable version. These commands require HTTPS access to GitHub, without an asset configuration or Git connection.
 
-No stable Release has been published yet, so update checks currently report that no stable release is available. CI candidate artifacts are not selected by the updater. Download, checksum or extraction failures preserve the installed program. Installation uses a temporary file beside the actual executable and requires write permission to that directory; no privilege elevation is attempted. If Windows keeps the old running program locked, Orbit reports the retained backup path for removal after the old process exits. SHA256 verifies integrity; the packages remain unsigned.
+If no stable Release is available, update checks report that explicitly. CI candidate artifacts are not selected by the updater. Download, checksum or extraction failures preserve the installed program. Installation uses a temporary file beside the actual executable and requires write permission to that directory; no privilege elevation is attempted. If Windows keeps the old running program locked, Orbit reports the retained backup path for removal after the old process exits. SHA256 verifies integrity; the packages remain unsigned.
 
 ## Development checks
 
