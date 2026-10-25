@@ -1,9 +1,9 @@
 # Changelog
 
-## Unreleased
+## v2.0.0 — 2026-10-25
 
 - Add read-only `check --duplicates` for repeated source selections, nested source directories, skill names and identical `SKILL.md` bytes, honoring `.orbitignore` and reporting incomplete local scans.
-- Default asset commands to `~/.orbit/orbit.yaml`; select project configurations explicitly with `--config`.
+- Default asset commands to `~/.orbit/orbit.yaml`; select project configurations explicitly with `--config`. **Breaking change:** project and parent-directory `orbit.yaml` files are no longer discovered automatically. Existing project workflows must pass `--config ./orbit.yaml`; the YAML schema remains `version: "1.0"`.
 - Show configuration paths, per-asset link actions and totals, plus sync validation, commit/no-change and push progress.
 
 ## v1.1.0 — 2026-10-25
