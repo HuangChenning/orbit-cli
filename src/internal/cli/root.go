@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/HuangChenning/orbit-cli/src/internal/config"
-	"github.com/HuangChenning/orbit-cli/src/internal/engine"
-	"github.com/HuangChenning/orbit-cli/src/internal/updater"
+	"github.com/HuangChenning/orbit-cli/v2/src/internal/config"
+	"github.com/HuangChenning/orbit-cli/v2/src/internal/engine"
+	"github.com/HuangChenning/orbit-cli/v2/src/internal/updater"
 	"github.com/spf13/cobra"
 )
 
@@ -40,7 +40,7 @@ func Execute() error {
 	var labels, names []string
 	var jobs int
 	var timeout time.Duration
-	root.PersistentFlags().StringVar(&explicit, "config", "", "configuration path (otherwise search parent directories)")
+	root.PersistentFlags().StringVar(&explicit, "config", "", "configuration path (default ~/.orbit/orbit.yaml)")
 	root.PersistentFlags().StringArrayVarP(&labels, "label", "l", nil, "select matching labels; comma-separated or repeated for OR")
 	root.PersistentFlags().StringArrayVar(&names, "name", nil, "select exact asset names; comma-separated or repeated")
 	root.PersistentFlags().IntVar(&jobs, "jobs", 4, "maximum concurrent vendor download operations")
@@ -143,6 +143,7 @@ func Execute() error {
 		if err != nil {
 			return err
 		}
+		fmt.Fprintln(cmd.OutOrStdout(), "config:", e.Config.Path)
 		return e.Link(cmd.Context(), d, linkForce)
 	}}
 	link.Flags().BoolVarP(&linkForce, "force", "f", false, "replace conflicting symlinks only; real files are protected")
@@ -159,6 +160,7 @@ func Execute() error {
 				return err
 			}
 		}
+		fmt.Fprintln(cmd.OutOrStdout(), "config:", e.Config.Path)
 		e.Message = message
 		return e.Publish(cmd.Context(), d, len(labels) == 0 && len(names) == 0, force)
 	}}

@@ -471,16 +471,119 @@ class OrbitCLIContracts(OrbitCLIFixture):
         self.orbit("vendor", "sync", success=False)
         self.assertFalse((self.root / "cache").exists())
 
-    def test_parent_config_discovery_uses_config_relative_paths(self):
+    def test_explicit_project_config_uses_config_relative_paths(self):
         self.config["global_cache"] = "./cache"
         self.config["link_targets"]["skills"] = ["./workspace/skills"]
         self.save()
         child = self.root / "nested" / "child"
         child.mkdir(parents=True)
-        self.orbit("vendor", "sync", cwd=child, explicit=False)
-        self.orbit("link", cwd=child, explicit=False)
+        self.orbit("vendor", "sync", cwd=child)
+        self.orbit("link", cwd=child)
         self.assertEqual((self.root / "workspace/skills/SKILL.md").read_bytes(), b"alpha-v1\n")
         self.assertFalse((child / "workspace").exists())
+
+    def test_duplicate_check_reports_same_name_content_and_source_without_writes(self):
+        (self.upstream / "skills/alpha/SKILL.md").write_text("---\nname: alpha\n---\nShared skill\n")
+        self.commit("named skill")
+        self.config["dependencies"] = self.config["dependencies"][:1]
+        dep = self.config["dependencies"][0]
+        dep.update(mirror_dir="skills/alpha", link=False)
+        self.config["dependencies"].append(dict(dep, name="copied", mirror_dir="skills/copied"))
+        self.save()
+        self.orbit("vendor", "sync")
+        before = self.path.read_bytes()
+        report = json.loads(self.orbit("check", "--duplicates", success=False).stdout)
+        self.assertEqual(len(report["duplicate_sources"]), 1)
+        self.assertEqual(len(report["duplicate_skill_content"]), 1)
+        self.assertEqual(len(report["duplicate_skill_names"]), 1)
+        self.assertEqual(report["unverified_assets"], [])
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(self.mirror_head(), "")
+        self.assertFalse(list(self.root.glob("orbit.yaml.*.bak")))
+        (self.root / "mirror/skills/copied/SKILL.md").write_text("---\nname: alpha\n---\nDifferent version\n")
+        changed = json.loads(self.orbit("check", "--duplicates", success=False).stdout)
+        self.assertEqual(len(changed["duplicate_skill_names"]), 1)
+        self.assertEqual(changed["duplicate_skill_content"], [])
+        selected = json.loads(self.orbit("check", "--duplicates", "--name", "skills").stdout)
+        self.assertEqual(selected["status"], "ok")
+
+    def test_duplicate_check_excludes_planned_paths_and_reports_missing_assets(self):
+        self.config["dependencies"] = self.config["dependencies"][:1]
+        self.config["dependencies"][0].update(mirror_dir="skills/alpha", link=False)
+        self.save()
+        report = json.loads(self.orbit("check", "--duplicates", success=False).stdout)
+        self.assertEqual(report["status"], "incomplete")
+        self.assertEqual(len(report["unverified_assets"]), 1)
+        self.assertFalse((self.root / "cache").exists())
+        self.orbit("vendor", "sync")
+        nested = self.root / "mirror/skills/alpha/nested/SKILL.md"
+        nested.parent.mkdir()
+        nested.write_bytes((self.root / "mirror/skills/alpha/SKILL.md").read_bytes())
+        self.config["dependencies"].append(dict(name="other", source=str(self.upstream), version=self.first,
+                                                subdir="skills/alpha", mirror_dir="skills/other", link=False))
+        self.save()
+        self.orbit("vendor", "sync", "--name", "other")
+        (self.root / ".orbitignore").write_text("skills/other/\n")
+        report = json.loads(self.orbit("check", "--duplicates").stdout)
+        self.assertEqual(report["duplicate_skill_content"], [])
+        self.assertGreater(report["excluded_paths"], 0)
+        self.assertTrue((self.root / "mirror/skills/other/SKILL.md").is_file())
+        self.orbit("check", "--duplicates", "--fix", success=False)
+
+    def test_duplicate_check_preserves_unique_bundle_skills_and_honors_nested_exclusions(self):
+        self.config["dependencies"] = self.config["dependencies"][:1]
+        dep = self.config["dependencies"][0]
+        dep.update(mirror_dir="skills/direct", link=False)
+        self.config["dependencies"].append(dict(dep, name="bundle", subdir="skills", mirror_dir="skills/bundle"))
+        self.save()
+        self.orbit("vendor", "sync")
+        unique = self.root / "mirror/skills/bundle/unique/SKILL.md"
+        unique.parent.mkdir()
+        unique.write_text("Unique bundle skill\n")
+        before = json.loads(self.orbit("check", "--duplicates", success=False).stdout)
+        self.assertEqual(len(before["overlapping_sources"]), 1)
+        (self.root / ".orbitignore").write_text("skills/bundle/alpha/\n")
+        after = json.loads(self.orbit("check", "--duplicates").stdout)
+        self.assertEqual(after["skills_checked"], 2)
+        self.assertEqual(after["overlapping_sources"], [])
+        self.assertTrue(unique.is_file())
+        self.assertTrue((self.root / "mirror/skills/bundle/alpha/SKILL.md").is_file())
+
+    def test_duplicate_check_does_not_treat_a_file_as_a_verified_asset_directory(self):
+        self.config["dependencies"] = self.config["dependencies"][:1]
+        self.config["dependencies"][0].update(mirror_dir="skills/alpha", link=False)
+        self.save()
+        root = self.root / "mirror/skills/alpha"
+        root.parent.mkdir(parents=True)
+        root.write_text("An asset must be a directory\n")
+        report = json.loads(self.orbit("check", "--duplicates", success=False).stdout)
+        self.assertEqual(report["status"], "incomplete")
+        self.assertEqual(len(report["unverified_assets"]), 1)
+        self.assertTrue(root.is_file())
+
+    def test_link_output_describes_creation_unchanged_and_disabled_cleanup(self):
+        self.orbit("vendor", "sync")
+        created = self.orbit("link", "--name", "skills").stdout
+        self.assertIn(str(self.path), created)
+        self.assertIn("created=1", created)
+        self.assertIn("link summary", created)
+        self.assertIn("unchanged=1", self.orbit("link", "--name", "skills").stdout)
+        self.config["dependencies"][0]["link"] = False
+        self.save()
+        self.assertIn("removed=1", self.orbit("link", "--name", "skills").stdout)
+        self.assertFalse((self.root / "workspace/skills").is_symlink())
+        self.assertIn("absent=1", self.orbit("link", "--name", "skills").stdout)
+
+    def test_sync_output_distinguishes_commit_push_and_no_local_changes(self):
+        self.orbit("vendor", "sync")
+        first = self.orbit("sync").stdout
+        self.assertIn(str(self.path), first)
+        self.assertIn("committed", first)
+        self.assertIn("pushing", first)
+        self.assertIn("push succeeded", first)
+        again = self.orbit("sync").stdout
+        self.assertIn("no local changes", again)
+        self.assertIn("push succeeded", again)
 
     def test_vendor_sync_does_not_implicitly_link_or_publish(self):
         self.orbit("vendor", "sync")

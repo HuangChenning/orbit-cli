@@ -98,10 +98,12 @@ orbit check
 | `orbit vendor sync` | 下载上游并组装本地资产 | `--name <name>` / `--label <label>`、`--jobs <n>` |
 | `orbit link` | 按 `link` 开关建立或移除匹配的链接 | `--name <name>` / `--label <label>`、`--force` |
 | `orbit sync` | 将本地资产提交并推送到个人远端 | `--name <name>` / `--label <label>`、`--message <text>` |
-| `orbit check` | 检查缓存与启用的链接 | 显式 Axon 输入下支持 `--fix` |
+| `orbit check` | 检查缓存与启用的链接，或检查重复声明和技能 | `--duplicates`；显式 Axon 输入下支持 `--fix` |
 | `orbit clean` | 预览并确认清理选中的受管理缓存 | `--name <name>` / `--label <label>`、`--yes` |
 
 使用 `--name` 按资产名称精确选择，或用 `--label` 按可选标签分组选择，二者互斥。两个参数都支持英文逗号列表和重复传参，会去除各项首尾空白、自动去重，并按 **OR** 取并集。名称和标签区分大小写；未知名称、标签零匹配、空项和中文逗号 `，` 均报错。筛选也适用于 `link`、`sync`、`check`、`clean`；显式 Axon 覆盖校验及修复始终比较完整配置。Vendor 下载默认最多 4 个并发 Git 操作。Git 操作默认超时两分钟，可用 `--timeout` 调整。
+
+`link` 显示所用配置、每个资产的操作计数及最终汇总，区分创建、替换、未变化、移除、保留、原本不存在和失败。`sync` 显示资产校验、新提交 ID 或无本地变化提示、推送进度及成功结果。快照未变化时仍会重试推送已有提交；失败返回非零退出码。
 
 Vendor 下载只获取配置指定 Git ref 的浅层快照，不拉取全部分支和完整历史。缓存属于内部实现，日常使用 `~/.orbit/repo` 中组装后的文件。
 
@@ -135,7 +137,7 @@ orbit clean
 | `~/.orbit/cache` | 按来源和版本共享的 Git 缓存 |
 | `~/.orbit/repo` | 下载后的资产，按 `mirror_dir` 组织为 skills、workflows、scripts、commands 等目录 |
 
-配置查找优先级：`--config <file>` → 最近的项目或父目录 `orbit.yaml` → 全局配置。相对路径以配置文件所在目录为基准，支持 `~/...`。
+资产命令默认只读取 `~/.orbit/orbit.yaml`，项目或父目录中的配置不会覆盖它。需要使用其他文件时显式执行 `orbit --config ./orbit.yaml link`。相对路径以所选配置文件所在目录为基准，支持 `~/...`。
 
 `link_targets` 在全局按类别声明工具根目录；依赖只设置 `link` 开关。`mirror_dir` 的首段选择类别，其余路径拼接到各工具根目录。
 
@@ -238,6 +240,19 @@ orbit sync
 - `sync` 发布当前受管理的本地资产，包括你的修改，不要求缓存存在，也不访问上游依赖。未管理文件的工作区修改及已有暂存修改需手工处理。仓库根目录中未跟踪的 `.DS_Store` 会保留且不发布，即使它已被 Git 忽略；已跟踪或已暂存的修改仍需手工处理。`--name` 或 `--label` 只暂存选中资产及其 manifest 条目，其他本地修改留待后续发布。
 - `.orbit-manifest.yaml` 记录组装时的上游来源和实际提交，不代表后续本地修改仍与该提交一致。内容未变时不创建空提交；推送失败保留本地提交以便重试。Git 属性或 filter 转换资产字节时拒绝发布，清除本次暂存并保留本地文件。
 
+## 检查重复配置与技能
+
+```sh
+orbit check --duplicates
+orbit check --duplicates --name core-skill,go-review
+```
+
+该命令输出只读 JSON，检查重复的 `source` / `ref` / `subdir` 声明、同一来源与 ref 下嵌套的目录选择、跨资产的同名技能及字节完全一致的 `SKILL.md`。技能名称优先读取 YAML frontmatter，缺失时使用所在目录名。字节一致仅表示该文件相同，不代表整个技能目录等价。未知字段、重复 YAML 键和重复依赖名称仍作为配置错误拒绝。
+
+检查读取 `orbit_repo.local_path` 中已有的文件，应用配置旁 `.orbitignore`，并报告排除数量和未能验证的资产。若集合中重叠的子目录已被完整排除，则不再报告该嵌套来源重叠。检查不下载、不比较上游版本、不修改配置、不删除文件，也不跟随软链接。JSON `status` 为 `ok`、`differences` 或 `incomplete`；后两种返回非零退出码。`--duplicates` 不能与 `--fix` 或 Axon 覆盖校验参数混用。
+
+去重时保留首选来源，并使用 `skills/collection/copied-skill/` 这样的仓库相对规则排除集合中的冗余副本。仅调整声明和排除规则时，已下载文件会保留；之后执行 `vendor sync` 才会在替换受管理资产时应用规则。工具软链接需另行执行 `link` 才会变化。若需要后续通过 `link: false` 清理已有的自有链接，应保留对应的禁用声明。
+
 ## 从 Axon 校验与修复
 
 日常命令以 Orbit 配置为准。提供显式 Axon 输入后，可核对 vendor 声明及 Hub 已提交的四类资产，发现缺失依赖、工具映射、来源冲突和未覆盖文件：
@@ -260,14 +275,14 @@ orbit check --axon-config "$HOME/.axon/axon.yaml" \
 
 ## 版本发布与二进制安装
 
-从 [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases) 下载稳定版安装包，本文档对应 **v1.1.0**。成功的 [Stable release checks 工作流](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml) 也提供供审核的候选产物；候选产物经批准且验证合并后的提交后才正式发布。
+从 [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases) 下载稳定版安装包，本文档对应 **v2.0.0**；从 v1.x 升级前请阅读下方迁移说明。成功的 [Stable release checks 工作流](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml) 也提供供审核的候选产物；候选产物经批准且验证合并后的提交后才正式发布。
 
 | 平台 | 压缩包 |
 | --- | --- |
-| macOS Apple Silicon | `orbit_1.0.0_darwin_arm64.tar.gz` |
-| macOS Intel | `orbit_1.0.0_darwin_amd64.tar.gz` |
-| Linux amd64 | `orbit_1.0.0_linux_amd64.tar.gz` |
-| Windows amd64 | `orbit_1.0.0_windows_amd64.zip` |
+| macOS Apple Silicon | `orbit_2.0.0_darwin_arm64.tar.gz` |
+| macOS Intel | `orbit_2.0.0_darwin_amd64.tar.gz` |
+| Linux amd64 | `orbit_2.0.0_linux_amd64.tar.gz` |
+| Windows amd64 | `orbit_2.0.0_windows_amd64.zip` |
 
 `CANDIDATE.json` 记录源码 SHA、工具链、原生运行环境及构建参数。解压前对照 `SHA256SUMS` 校验压缩包：macOS 使用 `shasum -a 256 <压缩包>`，Linux 使用 `sha256sum <压缩包>`，PowerShell 使用 `Get-FileHash <压缩包> -Algorithm SHA256`，将完整哈希与对应文件名的条目比较。
 
@@ -278,6 +293,18 @@ macOS / Linux 解压后，将 `orbit` 放入 `~/.orbit/bin` 并加入 PATH，再
 `orbit --version` 无需配置或 Git 连接：源码构建显示 `dev`，候选包显示版本、完整提交 SHA、UTC 构建时间及 Go 版本。时间采用源码提交时间以便重复构建。安装包仅含程序、MIT 许可证、中英文 README 及变更记录。
 
 [Go 官方运行要求](https://go.dev/wiki/MinimumRequirements)还包括 Linux 内核 3.2+、Windows 10+ / Windows Server 2016+。这些是工具链下限，Orbit 的原生验收范围仅限上表 runner 系统；不支持 WSL 1。
+
+### 从 v1.x 升级
+
+**不兼容变更：**资产命令默认读取 `~/.orbit/orbit.yaml`，不受当前工作目录影响；项目或父目录中的 `orbit.yaml` 不再自动优先使用。继续使用项目配置时，必须显式指定路径：
+
+```sh
+orbit --config ./orbit.yaml vendor sync
+orbit --config ./orbit.yaml link
+orbit --config ./orbit.yaml sync
+```
+
+若使用统一全局配置，请自行核对后将选定配置复制至 `~/.orbit/orbit.yaml`。相对路径以配置所在目录为基准，移动配置时需相应调整。升级程序本身不会迁移配置、下载或删除资产，也不会改变已有软链接。YAML 格式版本仍为 `version: "1.0"`，Go 模块路径改为 `github.com/HuangChenning/orbit-cli/v2`。`link` 和 `sync` 现在会显示进度与操作汇总；脚本应通过退出码判断成功，通过 `check --duplicates` 的 JSON 获取重复检查结果。
 
 若从早期未发布版本升级，请从 `./src` 重新构建，将 `orbit_repo.local_path` 设置为 `~/.orbit/repo`，使用 `orbit vendor sync` 下载、`orbit sync` 提交推送。运行 `orbit link` 迁移匹配的旧缓存链接，再用 `orbit clean` 清理选中的受管理缓存；其他已有路径需手工检查。
 
@@ -305,7 +332,7 @@ python3 -m unittest discover -s tests/acceptance -v
 python3 -m unittest discover -s tests -p test_synthetic_config.py -v
 ```
 
-Windows 构建文件名使用 `orbit.exe`。通过 `ORBIT_BIN` 可指定其他程序；CI 在 Go 1.27.3 中测试实际解压的候选程序，在 Go 1.26.10 中测试开发构建。测试仅使用临时本地仓库及合成资产，不依赖个人 Axon 清单。构建候选包时，在干净且已提交的源码目录中使用原生 Go 1.27.3 运行 `python3 tools/release.py build --version v1.1.0`，产物位于 `dist/`，不会发布版本。
+Windows 构建文件名使用 `orbit.exe`。通过 `ORBIT_BIN` 可指定其他程序；CI 在 Go 1.27.3 中测试实际解压的候选程序，在 Go 1.26.10 中测试开发构建。测试仅使用临时本地仓库及合成资产，不依赖个人 Axon 清单。构建候选包时，在干净且已提交的源码目录中使用原生 Go 1.27.3 运行 `python3 tools/release.py build --version v2.0.0`，产物位于 `dist/`，不会发布版本。
 
 ## 限制与行为边界
 

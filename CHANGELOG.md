@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.0.0 — 2026-10-25
+
+- Add read-only `check --duplicates` for repeated source selections, nested source directories, skill names and identical `SKILL.md` bytes, honoring `.orbitignore` and reporting incomplete local scans.
+- Default asset commands to `~/.orbit/orbit.yaml`; select project configurations explicitly with `--config`. **Breaking change:** project and parent-directory `orbit.yaml` files are no longer discovered automatically. Existing project workflows must pass `--config ./orbit.yaml`; the YAML schema remains `version: "1.0"`.
+- Show configuration paths, per-asset link actions and totals, plus sync validation, commit/no-change and push progress.
+- Move the Go module and internal imports to `github.com/HuangChenning/orbit-cli/v2` for the v2 major release; update release metadata injection accordingly.
+
 ## v1.1.0 — 2026-10-25
 
 - Use dependency `ref` for Git branches, tags and commits; accept legacy dependency `version` while rejecting configurations containing both keys. The schema version remains `"1.0"`, and existing caches/manifests remain compatible.

@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 
-	"github.com/HuangChenning/orbit-cli/src/internal/config"
+	"github.com/HuangChenning/orbit-cli/v2/src/internal/config"
 )
 
 func (e *Engine) Link(ctx context.Context, deps []config.Dependency, force bool) error {
@@ -17,14 +18,19 @@ func (e *Engine) Link(ctx context.Context, deps []config.Dependency, force bool)
 		return fmt.Errorf("no dependencies configured")
 	}
 	var errs []error
+	total := map[string]int{}
+	defer func() { printLinkCounts(e.Out, "link summary", total) }()
 	if e.Config.OrbitRepo != nil {
 		l, err := acquire(e.Config.OrbitRepo.LocalPath + ".orbit.lock")
 		if err != nil {
+			total["failed"]++
 			return err
 		}
 		defer l.Unlock()
 	}
 	for _, d := range deps {
+		counts := map[string]int{}
+		record := func(action string) { counts[action]++; total[action]++ }
 		if !d.Link {
 			sources := []string{filepath.Join(e.cache(d), filepath.FromSlash(d.Subdir))}
 			if e.Config.OrbitRepo != nil && d.MirrorDir != "" {
@@ -33,33 +39,78 @@ func (e *Engine) Link(ctx context.Context, deps []config.Dependency, force bool)
 			// Resolve the configured destinations even though linking is disabled.
 			d.Link = true
 			for _, target := range e.Config.Targets(d) {
+				removed, failed := false, false
 				for _, source := range sources {
-					if err := removeMatchingLink(source, target); err != nil {
+					didRemove, err := removeMatchingLink(source, target)
+					if err != nil {
 						errs = append(errs, err)
+						record("failed")
+						failed = true
+						break
+					}
+					if didRemove {
+						removed = true
+						break
+					}
+				}
+				if !failed {
+					if removed {
+						record("removed")
+					} else if _, err := os.Lstat(target); os.IsNotExist(err) {
+						record("absent")
+					} else if err != nil {
+						errs = append(errs, err)
+						record("failed")
+					} else {
+						record("preserved")
 					}
 				}
 			}
+			printLinkCounts(e.Out, "link "+d.Name+" (disabled)", counts)
 			continue
 		}
 		source, _, err := e.localAsset(d)
 		if err == nil {
 			for _, target := range e.Config.Targets(d) {
 				replace := force
+				action := "created"
 				if old, readErr := os.Readlink(target); readErr == nil {
 					if !filepath.IsAbs(old) {
 						old = filepath.Join(filepath.Dir(target), old)
+					}
+					action = "replaced"
+					if sameNativePath(old, source) {
+						action = "unchanged"
 					}
 					replace = replace || sameNativePath(old, filepath.Join(e.cache(d), filepath.FromSlash(d.Subdir)))
 				}
 				if err = makeLink(source, target, replace); err != nil {
 					errs = append(errs, err)
+					record("failed")
+				} else {
+					record(action)
 				}
 			}
 		} else {
 			errs = append(errs, err)
+			record("failed")
 		}
+		printLinkCounts(e.Out, "link "+d.Name, counts)
 	}
 	return errors.Join(errs...)
+}
+
+func printLinkCounts(out io.Writer, label string, counts map[string]int) {
+	var fields []string
+	for _, action := range []string{"created", "replaced", "unchanged", "removed", "preserved", "absent", "failed"} {
+		if counts[action] > 0 {
+			fields = append(fields, fmt.Sprintf("%s=%d", action, counts[action]))
+		}
+	}
+	if len(fields) == 0 {
+		fields = append(fields, "no configured targets")
+	}
+	fmt.Fprintf(out, "%s: %s\n", label, strings.Join(fields, ", "))
 }
 
 // sameNativePath recognizes native aliases without following symlink parents.
@@ -91,32 +142,35 @@ func sameNativePath(a, b string) bool {
 	return sameNativePath(filepath.Dir(a), filepath.Dir(b))
 }
 
-func removeMatchingLink(source, target string) error {
+func removeMatchingLink(source, target string) (bool, error) {
 	if err := config.NoSymlinks(filepath.Dir(target)); err != nil {
-		return err
+		return false, err
 	}
 	info, err := os.Lstat(target)
 	if os.IsNotExist(err) {
-		return nil
+		return false, nil
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	if info.Mode()&os.ModeSymlink == 0 {
-		return nil
+		return false, nil
 	}
 	old, err := os.Readlink(target)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !filepath.IsAbs(old) {
 		old = filepath.Join(filepath.Dir(target), old)
 	}
 	// Native aliases and missing suffixes must also match for dangling links.
 	if !sameNativePath(old, source) {
-		return nil
+		return false, nil
 	}
-	return os.Remove(target)
+	if err := os.Remove(target); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func makeLink(source, target string, force bool) error {
