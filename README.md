@@ -37,7 +37,19 @@ $ orbit check
 
 ## Quick start
 
-Ensure **Git is on your PATH**. Source builds require Go 1.26 or 1.27 (CI pins 1.26.10 and 1.27.3). Build from source on macOS / Linux:
+Install with [Homebrew](https://brew.sh) on macOS (Apple Silicon / Intel) or Linux amd64:
+
+```sh
+brew install HuangChenning/tap/orbit
+orbit --version
+orbit init
+```
+
+The [personal tap](https://github.com/HuangChenning/homebrew-tap) installs the published binary and verifies its SHA256. Go and Python are not required. macOS requires version 13 or newer. Configuration and assets still default to `~/.orbit`; Homebrew manages the executable. To upgrade, run `brew update` followed by `brew upgrade HuangChenning/tap/orbit`, rather than `orbit update`.
+
+If you previously installed Orbit manually, check `command -v orbit`: an earlier directory in PATH may select that copy. Check the Homebrew copy directly with `"$(brew --prefix orbit)/bin/orbit" --version`, then adjust your PATH to select the installation you want to use.
+
+Alternatively, ensure **Git is on your PATH** and build from source on macOS / Linux. Source builds require Go 1.26 or 1.27 (CI pins 1.26.10 and 1.27.3):
 
 ```sh
 git clone https://github.com/HuangChenning/orbit-cli.git
@@ -48,7 +60,7 @@ export PATH="$HOME/.orbit/bin:$PATH"
 orbit init
 ```
 
-Add the PATH setting to your shell startup file to make it persistent. By default, `orbit init` creates `~/.orbit/orbit.yaml` without overwriting an existing configuration.
+For source installations, add the PATH setting to your shell startup file to make it persistent. By default, `orbit init` creates `~/.orbit/orbit.yaml` without overwriting an existing configuration.
 
 Create your personal remote repository, then edit this file. Replace `YOUR_ACCOUNT` with your account and declare your first dependency:
 
@@ -309,6 +321,8 @@ For a single global setup, review and copy your chosen configuration to `~/.orbi
 If upgrading an earlier unpublished checkout, rebuild from `./src`, set `orbit_repo.local_path` to `~/.orbit/repo`, use `orbit vendor sync` for downloads and `orbit sync` for pushes. Run `orbit link` to migrate matching old cache links, then `orbit clean` to remove selected owned caches. Existing unrelated paths require manual review.
 
 ## Online updates
+
+For Homebrew installations, use `brew update` and `brew upgrade HuangChenning/tap/orbit`. The commands below update manually installed binaries; `orbit update check` can also check the latest version for Homebrew users.
 
 ```sh
 orbit update check

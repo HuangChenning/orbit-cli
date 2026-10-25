@@ -37,7 +37,19 @@ $ orbit check
 
 ## 快速开始
 
-先确保 **Git 在 PATH 中**。源码构建需要 Go 1.26 或 1.27，CI 固定验证 1.26.10 和 1.27.3。macOS / Linux 从源码构建：
+在 macOS（Apple Silicon / Intel）或 Linux amd64 上使用 [Homebrew](https://brew.sh) 安装：
+
+```sh
+brew install HuangChenning/tap/orbit
+orbit --version
+orbit init
+```
+
+[个人 tap](https://github.com/HuangChenning/homebrew-tap) 使用已发布的二进制包并校验 SHA256，无需 Go 或 Python。macOS 要求 13 或更新版本。配置与资产仍默认存放在 `~/.orbit`，程序由 Homebrew 管理。升级时先执行 `brew update`，再执行 `brew upgrade HuangChenning/tap/orbit`，使用这组命令替代 `orbit update`。
+
+如果之前手动安装过 Orbit，请用 `command -v orbit` 查看当前使用的程序，PATH 中靠前的旧安装可能优先被执行。可以直接用 `"$(brew --prefix orbit)/bin/orbit" --version` 检查 Brew 版本，再调整 PATH 选择要使用的安装。
+
+也可以从源码构建：先确保 **Git 在 PATH 中**，并安装 Go 1.26 或 1.27，CI 固定验证 1.26.10 和 1.27.3。macOS / Linux 执行：
 
 ```sh
 git clone https://github.com/HuangChenning/orbit-cli.git
@@ -48,7 +60,7 @@ export PATH="$HOME/.orbit/bin:$PATH"
 orbit init
 ```
 
-将 PATH 设置加入 shell 启动文件以持久生效。`orbit init` 默认创建 `~/.orbit/orbit.yaml`，已有配置不会被覆盖。
+源码安装时，将 PATH 设置加入 shell 启动文件以持久生效。`orbit init` 默认创建 `~/.orbit/orbit.yaml`，已有配置不会被覆盖。
 
 先创建个人远端仓库，再编辑该文件，将 `YOUR_ACCOUNT` 替换为自己的账号并声明第一个依赖：
 
@@ -309,6 +321,8 @@ orbit --config ./orbit.yaml sync
 若从早期未发布版本升级，请从 `./src` 重新构建，将 `orbit_repo.local_path` 设置为 `~/.orbit/repo`，使用 `orbit vendor sync` 下载、`orbit sync` 提交推送。运行 `orbit link` 迁移匹配的旧缓存链接，再用 `orbit clean` 清理选中的受管理缓存；其他已有路径需手工检查。
 
 ## 在线更新
+
+通过 Homebrew 安装的用户应使用 `brew update` 和 `brew upgrade HuangChenning/tap/orbit`。下面的更新命令适用于手动安装的程序；Brew 用户也可以用 `orbit update check` 查询最新版本。
 
 ```sh
 orbit update check
