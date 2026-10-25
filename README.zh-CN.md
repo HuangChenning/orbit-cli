@@ -6,7 +6,7 @@
 
 Go 1.26 / 1.27 · 系统 Git · 声明式配置
 
-[快速开始](#快速开始) · [命令参考](#命令参考) · [提交推送到 GitHub](#提交推送到-github) · [Axon 迁移检查](#从-axon-校验与修复)
+[快速开始](#快速开始) · [命令参考](#命令参考) · [配置参数](#配置参数参考) · [提交推送到 GitHub](#提交推送到-github) · [Axon 迁移检查](#从-axon-校验与修复)
 
 ## 简介
 
@@ -136,12 +136,71 @@ orbit clean
 
 将已有依赖的 `link` 改为 `false` 后，再执行 `orbit link`，会移除当前目标路径上仍指向该依赖本地资产目录的软链接，包括失效链接，也会清理匹配的旧缓存链接；不会删除缓存、本地资产、真实文件、目录或指向其他位置的链接。清理无需缓存存在，仍受 `--label` 限制。配置中不再包含的旧目标路径需手工处理。
 
-| 依赖字段 | 默认或省略时的行为 |
-| --- | --- |
-| `name`、`source`、`version` | 必填；名称不能重复 |
-| `subdir` | 默认 `.`，使用完整仓库 |
-| `link` | 默认 `false`；执行 `orbit link` 时清理匹配的旧链接，仍可下载和发布 |
-| `mirror_dir` | 本地 repo 中的资产路径；省略后只下载到缓存；启用链接时必须填写 |
+## 配置参数参考
+
+`orbit.yaml` 只能包含一个 YAML 映射文档；未知字段、重复键和错误类型会被拒绝。字符串版本应加引号，例如 `"1.0"`；开关使用 YAML 布尔值 `true` / `false`。这些配置描述资产，`--jobs`、`--timeout`、`--message` 是命令行参数，不能写成 YAML 字段。
+
+### 顶层字段
+
+| 字段 | 类型 | 必填与默认值 | 说明 |
+| --- | --- | --- | --- |
+| `version` | 字符串 | 必填，固定为 `"1.0"` | 配置格式版本，与 Orbit 程序版本、各依赖的上游版本分别独立。 |
+| `global_cache` | 路径字符串 | 必填，无自动默认值 | 内部 Git 缓存根目录。初始化模板填写 `~/.orbit/cache`；供工具使用的资产会组装到 `orbit_repo.local_path`。 |
+| `orbit_repo` | 映射 | 解析时可省略；执行 `vendor sync`、`sync` 和建立启用的资产链接时必需 | 个人 Git 仓库配置，详见下表。缓存检查、清理可使用不包含此节的配置。 |
+| `link_targets` | 类别到路径字符串列表的映射 | 可省略，默认无目标 | 按类别统一声明工具根目录。常用类别为 `skills`、`workflows`、`scripts`、`commands`，也支持自定义的单段类别名。每个启用链接的依赖，其类别必须至少配置一个目标。 |
+| `dependencies` | 映射列表 | 可省略，默认为空列表 | 需要下载、组装、链接和发布的上游资产。初始空配置可使用 `[]`。 |
+
+### 个人仓库：`orbit_repo`
+
+| 字段 | 类型 | 必填与默认值 | 说明 |
+| --- | --- | --- | --- |
+| `remote` | 字符串 | 配置了 `orbit_repo` 时必填 | 个人 Git 远端，例如 `git@github.com:YOUR_ACCOUNT/orbit-repo.git` 或 HTTPS 地址。按原值交给 Git；本地远端应使用绝对路径，不依赖 Orbit 展开 `~` 或相对路径。 |
+| `branch` | 字符串 | 必填，无默认值 | 个人仓库的目标分支名，例如 `main`；填写分支名，不使用 `refs/heads/main`。此字段不控制依赖的上游版本。 |
+| `local_path` | 路径字符串 | 省略或为空时默认 `~/.orbit/repo` | 存放组装资产及 `.orbit-manifest.yaml` 的本地 checkout，与内部缓存分开。 |
+
+远端仓库应预先创建，并确保 Git 有访问权限。Vendor sync 可能克隆个人远端以保留已有历史和未管理文件，但不提交、不推送；`orbit sync` 才发布本地受管理资产。
+
+### 上游资产：`dependencies[]`
+
+| 字段 | 类型 | 必填与默认值 | 说明 |
+| --- | --- | --- | --- |
+| `name` | 字符串 | 必填、非空且不能重复 | 报告和 manifest 中使用的资产标识；存储及链接路径由 `mirror_dir` 决定，不由名称决定。 |
+| `source` | 字符串 | 必填、非空 | 上游 Git HTTPS/SSH 地址或本地仓库路径。`./vendor/example` 等本地相对路径以配置目录为基准，本地路径支持 `~/...`。 |
+| `version` | 字符串 | 必填，无默认值 | 上游 branch、tag 或完整的 40 位 commit SHA。分支建议写 `refs/heads/main`，标签建议写 `refs/tags/v1.2.3`。短名称无歧义时可用，branch/tag 同名会报错；分支跟随更新，commit SHA 固定内容，已缓存标签变化会被拒绝。 |
+| `subdir` | 相对路径字符串 | 省略或为空时默认 `.` | 上游 checkout 内选取的目录，例如 `skills/skill-creator`；`.` 表示整个仓库。必须是目录，不能直接指向单个文件。 |
+| `mirror_dir` | 相对路径字符串 | 可省略；`link: true` 时必填 | 个人本地 repo 内的目标目录，例如 `skills/skill-creator`。省略后该依赖只下载到缓存；首段路径用于选择链接类别。 |
+| `link` | 布尔值 | 默认 `false` | 控制 `orbit link` 是否建立该资产的链接。`false` 不影响下载和发布；执行 `orbit link` 时会清理此前匹配的受管理链接，不删除资产文件。 |
+| `labels` | 字符串列表 | 默认 `[]`，各项不能为空 | 显式分组标签，例如 `["core", "backend"]`，不会根据 `mirror_dir` 或类别自动生成。不带 `--label` 时包含全部依赖；重复传入 `--label` 按精确、区分大小写的 OR 规则取并集，无匹配时报错。 |
+
+### 路径与链接映射
+
+Orbit 在文件系统配置项中展开 `~` / `~/...`，适用于 `global_cache`、`orbit_repo.local_path`、`link_targets` 的值及本地依赖路径；不支持 `~otheruser` 或 `$HOME` 等 shell 变量展开。文件系统相对路径以 `orbit.yaml` 所在目录为基准，不以终端工作目录为基准。Git 远端字符串遵循上表 `remote` 的规则。Windows 路径建议使用正斜杠或 YAML 单引号，避免反斜杠被当作转义符。
+
+`subdir`、`mirror_dir` 是仓库内部路径，不允许绝对路径、`~`、`..` 路径段、`.git` 路径段或 `.orbit-manifest.yaml` 路径段。`subdir` 可以为 `.`，`mirror_dir` 必须指向非根目录；不同依赖的 `mirror_dir` 不能相同或互相嵌套。类别名必须是安全的单段相对路径。
+
+缓存根目录与本地 repo 根目录不能重叠，也不能是文件系统根目录或用户主目录，已有祖先不能是软链接。计算出的启用链接目标不能与受管理存储或彼此重叠，也不能是文件系统根目录或用户主目录。实际链接时，即便指定 `--force`，也会保护真实文件、目录和软链接父目录。
+
+其余顶层参数配置完成后，下面这段配置把同一资产链接到两个工具：
+
+```yaml
+link_targets:
+  skills:
+    - "~/.claude/skills"
+    - "~/.codex/skills"
+
+dependencies:
+  - name: "core-skill"
+    source: "https://github.com/anthropics/skills.git"
+    version: "refs/heads/main"
+    subdir: "skills/skill-creator"
+    mirror_dir: "skills/core-skill"
+    link: true
+    labels: ["core", "backend"]
+```
+
+使用默认 `local_path` 时，选中的上游目录会组装到 `~/.orbit/repo/skills/core-skill`；执行 `orbit link` 后，映射到 `~/.claude/skills/core-skill` 和 `~/.codex/skills/core-skill`。`skills/` 后的后缀会拼接到各工具根目录。配置多个 skill 时，应使用 `skills/core-skill`、`skills/another-skill` 等独立目录，不能都指定为 `skills`。
+
+相同 `source`、`version` 的依赖共用一份缓存，即使名称或 `subdir` 不同。标签筛选的是依赖，并不会复制缓存：清理被选中的共享缓存，也会移除未选中但共用该缓存的依赖缓存；已组装的 repo 资产及指向它们的链接仍然可用。
 
 ## 提交推送到 GitHub
 
