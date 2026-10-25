@@ -103,7 +103,7 @@ func (e *Engine) Publish(ctx context.Context, deps []config.Dependency, full, fo
 		return fmt.Errorf("orbit_repo is required for sync")
 	}
 	if _, err := os.Stat(r.LocalPath); err != nil {
-		return fmt.Errorf("local repository missing; run orbit vendor sync: %w", err)
+		return fmt.Errorf("local repository missing; run orbit pull to restore personal assets, or orbit vendor sync to download upstream: %w", err)
 	}
 	l, err := acquire(r.LocalPath + ".orbit.lock")
 	if err != nil {

@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.1.0 — 2026-10-26
+
+- Restore assets from the personal repository with `orbit pull`, without upstream dependencies or caches, and register them in the local YAML. Validate incoming assets and configuration before installation; update existing repositories only by fast-forward and preserve dirty worktrees and unpublished commits.
+- Preserve local dependency switches, labels, tool targets and unrelated declarations. Conflicting asset identities stop with both values shown; `pull --update-config` explicitly accepts the remote identity after review. Configuration writes are atomic and detect concurrent edits.
+- Preview directory and broken symlinks directly under `link_targets` with `orbit link clean`; `--yes` removes those links, including Axon/foreign links, while preserving assets, real directories, file links and nested links.
+- Document Ubuntu Homebrew installation, trust-store permissions, and the complete new-device pull/link workflow in both READMEs.
+
 ## v2.0.0 — 2026-10-25
 
 - Add read-only `check --duplicates` for repeated source selections, nested source directories, skill names and identical `SKILL.md` bytes, honoring `.orbitignore` and reporting incomplete local scans.

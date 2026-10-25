@@ -10,7 +10,7 @@ Go 1.26 / 1.27 · 系统 Git · 声明式配置
 
 ## 简介
 
-Orbit 面向在多个工具和项目之间复用 **skills、workflows、scripts、commands** 的开发者：`orbit vendor sync` 将上游资产下载到 `~/.orbit/repo`，`orbit link` 通过软链接分发资产，`orbit sync` 将本地资产提交并推送到个人 Git 仓库。
+Orbit 面向在多个工具、项目和设备间复用 **skills、workflows、scripts、commands** 的开发者：`orbit pull` 从个人 Git 仓库恢复资产并注册到本机配置；`orbit vendor sync` 将上游资产下载到 `~/.orbit/repo`，`orbit link` 通过软链接分发资产，`orbit sync` 将本地资产提交并推送到个人 Git 仓库。
 
 ## 运行示例
 
@@ -33,7 +33,7 @@ $ orbit check
 
 <img src="assets/readme/asset-flow.svg" width="640" alt="Orbit 资产流：vendor sync 经内部缓存将上游资产下载组装到本地仓库；link 将本地资产链接到工具目录；sync 将本地资产提交并推送到个人 Git 远端。">
 
-`vendor sync` 下载并组装本地资产，不提交、不推送；`link` 按配置建立或移除工具链接；`sync` 提交并推送本地资产，不重新下载上游，也不从缓存覆盖本地内容。三个操作均不回写上游。
+`pull` 恢复或快进更新个人仓库，并刷新本机依赖声明；`vendor sync` 下载并组装上游资产，不提交、不推送；`link` 按配置建立或移除工具链接；`sync` 提交并推送本地资产，不重新下载上游，也不从缓存覆盖本地内容。所有操作均不回写上游。新设备请先阅读[在另一台设备上恢复](#在另一台设备上恢复)。
 
 ## 快速开始
 
@@ -109,8 +109,10 @@ orbit check
 | `orbit update check` | 检查 GitHub 最新稳定版 | 无需资产配置 |
 | `orbit update` | 下载、校验 SHA256 后替换当前程序 | 无需资产配置 |
 | `orbit init` | 生成配置，不覆盖已有文件 | `--path <dir>` |
+| `orbit pull` | 恢复或更新个人仓库，并将资产注册到本机配置 | `--update-config` 明确接受有冲突的资产身份 |
 | `orbit vendor sync` | 下载上游并组装本地资产 | `--name <name>` / `--label <label>`、`--jobs <n>` |
 | `orbit link` | 按 `link` 开关建立或移除匹配的链接 | `--name <name>` / `--label <label>`、`--force` |
+| `orbit link clean` | 预览工具目录直接子项中的目录软链接及失效链接，包括 Axon 链接 | `--yes` 确认删除链接 |
 | `orbit sync` | 将本地资产提交并推送到个人远端 | `--name <name>` / `--label <label>`、`--message <text>` |
 | `orbit check` | 检查缓存与启用的链接，或检查重复声明和技能 | `--duplicates`；显式 Axon 输入下支持 `--fix` |
 | `orbit clean` | 预览并确认清理选中的受管理缓存 | `--name <name>` / `--label <label>`、`--yes` |
@@ -231,6 +233,47 @@ dependencies:
 
 相同 `source`、`ref` 的依赖共用一份缓存，即使名称或 `subdir` 不同。标签筛选的是依赖，并不会复制缓存：清理被选中的共享缓存，也会移除未选中但共用该缓存的依赖缓存；已组装的 repo 资产及指向它们的链接仍然可用。
 
+## 在另一台设备上恢复
+
+执行 `orbit init` 后，编辑 `~/.orbit/orbit.yaml`，填写已有个人仓库地址，并设置本机实际使用的工具目录。保留初始化生成的格式版本与缓存设置即可，无需提前填写上游依赖：
+
+```yaml
+version: "1.0"
+global_cache: "~/.orbit/cache"
+orbit_repo:
+  remote: "https://github.com/YOUR_ACCOUNT/orbit-repo.git"
+  branch: "main"
+  local_path: "~/.orbit/repo"
+link_targets:
+  skills:
+    - "~/.claude/skills"
+dependencies: []
+```
+
+```sh
+orbit pull
+orbit link
+orbit check
+```
+
+远端必须已有 Orbit 发布的资产和 `.orbit-manifest.yaml`，当前设备的 Git 凭证需要有访问权限。`pull` 从个人仓库恢复指定分支，不访问原始上游，也不依赖上游缓存。后续拉取要求工作区干净且历史能快进；本地修改（包括未跟踪或被忽略文件）、本机未推送提交或历史分叉会使操作停止，不丢弃本地工作，也不自动 stash、rebase 或强制覆盖。`pull` 更新整个仓库，不支持 `--name`、`--label`。
+
+修改本地资产前，Orbit 会校验远端清单、资产路径和候选配置。新资产注册为规范的 `ref`、`vendor: false`，只有本机配置了对应类别的 `link_targets` 时才设为 `link: true`。已有资产的开关、标签、本机链接目标和无关依赖声明均保留。同名资产的 `source`、`ref`、`subdir` 或 `mirror_dir` 不一致时，会显示两边的值并报冲突；检查后可用 `orbit pull --update-config` 明确接受远端身份。该参数不会绕过路径重叠等校验，也不会覆盖本机开关。
+
+配置原子写入，期间的外部编辑会被检测并拒绝覆盖。注册内容不变时保留原文件字节。若最后写配置失败会明确报错；已有仓库可能已经快进，请检查配置后重试 `pull`。远端清单中没有的本机声明暂不自动删除；若它们指向其他设备已删除的资产，请在发布前单独检查。远端清单不保存标签，因此新注册资产没有标签。
+
+### 清理旧 Axon 或其他工具链接
+
+先预览 `link_targets` 各目录直接子项中的目录软链接及失效链接，再明确确认删除：
+
+```sh
+orbit link clean
+orbit link clean --yes
+orbit link
+```
+
+清理范围包括 Orbit 和其他工具创建的链接，不受依赖的 `link` 开关限制。只删除链接本身，保留其指向的资产、真实目录、普通文件、指向普通文件的链接以及真实子目录内部的链接。不递归、不跟随配置目录本身的软链接，并拒绝不安全目录和与资产存储重叠的目录。不支持 `--name`、`--label`。清理后，`orbit link` 只重建当前配置中启用的 Orbit 链接。
+
 ## 提交推送到 GitHub
 
 `orbit_repo` 指定个人远端与本地资产目录，请确保远端仓库已创建、Git 凭证可用：
@@ -289,14 +332,14 @@ orbit check --axon-config "$HOME/.axon/axon.yaml" \
 
 ## 版本发布与二进制安装
 
-从 [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases) 下载稳定版安装包，本文档对应 **v2.0.0**；从 v1.x 升级前请阅读下方迁移说明。成功的 [Stable release checks 工作流](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml) 也提供供审核的候选产物；候选产物经批准且验证合并后的提交后才正式发布。
+从 [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases) 下载稳定版安装包，本文档对应 **v2.1.0**；从 v1.x 升级前请阅读下方迁移说明。成功的 [Stable release checks 工作流](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml) 也提供供审核的候选产物；候选产物经批准且验证合并后的提交后才正式发布。
 
 | 平台 | 压缩包 |
 | --- | --- |
-| macOS Apple Silicon | `orbit_2.0.0_darwin_arm64.tar.gz` |
-| macOS Intel | `orbit_2.0.0_darwin_amd64.tar.gz` |
-| Linux amd64 | `orbit_2.0.0_linux_amd64.tar.gz` |
-| Windows amd64 | `orbit_2.0.0_windows_amd64.zip` |
+| macOS Apple Silicon | `orbit_2.1.0_darwin_arm64.tar.gz` |
+| macOS Intel | `orbit_2.1.0_darwin_amd64.tar.gz` |
+| Linux amd64 | `orbit_2.1.0_linux_amd64.tar.gz` |
+| Windows amd64 | `orbit_2.1.0_windows_amd64.zip` |
 
 `CANDIDATE.json` 记录源码 SHA、工具链、原生运行环境及构建参数。解压前对照 `SHA256SUMS` 校验压缩包：macOS 使用 `shasum -a 256 <压缩包>`，Linux 使用 `sha256sum <压缩包>`，PowerShell 使用 `Get-FileHash <压缩包> -Algorithm SHA256`，将完整哈希与对应文件名的条目比较。
 
@@ -376,19 +419,19 @@ Brew 安装失败后出现 `orbit: command not found`，表示程序尚不可用
 
 ### 在新机器上配置个人仓库
 
-先运行 `orbit init`，再编辑 `~/.orbit/orbit.yaml`。将 `orbit_repo.remote` 设置为已有个人仓库的 HTTPS 或 SSH 地址，`branch` 设置为目标分支（例如 `main`），`local_path` 设置为 `~/.orbit/repo`。远端仓库需要已存在，且当前机器的 Git 凭证有访问权限；私有仓库在下载时也需要认证。YAML 示例见[提交推送到 GitHub](#提交推送到-github)。
+执行 `orbit init`，配置 `orbit_repo` 和本机 `link_targets`，再按[在另一台设备上恢复](#在另一台设备上恢复)操作。恢复已有资产只需访问个人仓库，不要求提前配置上游依赖或下载缓存。
 
-复用旧机器配置时，将旧机器的 `~/.orbit/orbit.yaml` 以及同目录的 `.orbitignore`（如有）传到新机器；替换前先检查目标位置已有文件。保留依赖声明和排除规则，调整机器专属的绝对路径，并在 `link_targets` 中只保留当前机器实际使用的工具目录。`~` 会解析为当前用户的主目录，例如 Ubuntu 上的 `/home/ubuntu`。`orbit init` 只生成初始模板，不会从个人资产仓库自动获取旧配置。
+如需复用额外偏好，也可传输旧机器的 `~/.orbit/orbit.yaml` 和同目录的 `.orbitignore`；替换前检查目标文件、调整绝对路径并保留本机相关的工具目录。`~` 解析为当前用户主目录，例如 `/home/ubuntu`。`pull` 刷新资产注册，不会从个人仓库复制其他机器的链接目标、标签或排除规则。
 
 检查配置后执行：
 
 ```sh
-orbit vendor sync
+orbit pull
 orbit link
 orbit check
 ```
 
-`vendor sync` 将配置的上游资产下载到 `~/.orbit/repo`，刷新的受管理资产会恢复为上游内容并丢弃本地修改；`link` 建立配置的工具链接。需要将本地受管理资产提交并推送到个人仓库时，再单独执行 `orbit sync`。
+只有明确需要更新声明的上游来源时才运行 `orbit vendor sync`；需要将本地受管理资产提交并推送到个人仓库时，再单独运行 `orbit sync`。
 
 ## 开发检查
 
@@ -403,7 +446,7 @@ python3 -m unittest discover -s tests/acceptance -v
 python3 -m unittest discover -s tests -p test_synthetic_config.py -v
 ```
 
-Windows 构建文件名使用 `orbit.exe`。通过 `ORBIT_BIN` 可指定其他程序；CI 在 Go 1.27.3 中测试实际解压的候选程序，在 Go 1.26.10 中测试开发构建。测试仅使用临时本地仓库及合成资产，不依赖个人 Axon 清单。构建候选包时，在干净且已提交的源码目录中使用原生 Go 1.27.3 运行 `python3 tools/release.py build --version v2.0.0`，产物位于 `dist/`，不会发布版本。
+Windows 构建文件名使用 `orbit.exe`。通过 `ORBIT_BIN` 可指定其他程序；CI 在 Go 1.27.3 中测试实际解压的候选程序，在 Go 1.26.10 中测试开发构建。测试仅使用临时本地仓库及合成资产，不依赖个人 Axon 清单。构建候选包时，在干净且已提交的源码目录中使用原生 Go 1.27.3 运行 `python3 tools/release.py build --version v2.1.0`，产物位于 `dist/`，不会发布版本。
 
 ## 限制与行为边界
 

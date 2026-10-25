@@ -65,6 +65,23 @@ func main() {
 		return
 	}
 	for _, arg := range os.Args[1:] {
+		if os.Getenv("ORBIT_TEST_GIT_MODE") == "pause-fetch" && arg == "fetch" {
+			marker := os.Getenv("ORBIT_TEST_GIT_MARKER")
+			if err := os.WriteFile(marker+".started", []byte("started\n"), 0600); err != nil {
+				panic(err)
+			}
+			deadline := time.Now().Add(15 * time.Second)
+			for {
+				if _, err := os.Stat(marker + ".release"); err == nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					fmt.Fprintln(os.Stderr, "timed out waiting for fetch release")
+					os.Exit(1)
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+		}
 		if os.Getenv("ORBIT_TEST_GIT_MODE") == "fail-clone" && arg == "clone" {
 			dest := os.Args[len(os.Args)-1]
 			if err := os.MkdirAll(dest, 0700); err != nil {
