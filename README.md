@@ -6,7 +6,7 @@ English · [简体中文](README.zh-CN.md)
 
 Go 1.26 / 1.27 · System Git · Declarative configuration
 
-[Quick start](#quick-start) · [Commands](#commands) · [Publish to GitHub](#publish-to-github) · [Axon migration checks](#check-and-repair-an-axon-migration)
+[Quick start](#quick-start) · [Commands](#commands) · [Configuration](#configuration-reference) · [Publish to GitHub](#publish-to-github) · [Axon migration checks](#check-and-repair-an-axon-migration)
 
 ## Overview
 
@@ -69,11 +69,13 @@ link_targets:
 dependencies:
   - name: "skill-creator"
     source: "https://github.com/anthropics/skills.git"
-    version: "refs/heads/main"
+    ref: "refs/heads/main"
     subdir: "skills/skill-creator"
     mirror_dir: "skills/skill-creator"
+    vendor: true
     link: true
-    labels: ["skills"]
+    labels:
+      - skills
 ```
 
 Then run:
@@ -93,18 +95,21 @@ The downloaded files appear in `~/.orbit/repo/skills/skill-creator`. This exampl
 | `orbit update check` | Check the latest stable GitHub Release | No asset configuration required |
 | `orbit update` | Download, verify SHA256 and replace the current program | No asset configuration required |
 | `orbit init` | Generate configuration without overwriting an existing file | `--path <dir>` |
-| `orbit vendor sync` | Download upstream and assemble local assets | `--label <label>`, `--jobs <n>` |
-| `orbit link` | Create or remove matching links according to the `link` switch | `--label <label>`, `--force` |
-| `orbit sync` | Commit and push local assets to your personal remote | `--label <label>`, `--message <text>` |
+| `orbit vendor sync` | Download upstream and assemble local assets | `--name <name>` / `--label <label>`, `--jobs <n>` |
+| `orbit link` | Create or remove matching links according to the `link` switch | `--name <name>` / `--label <label>`, `--force` |
+| `orbit sync` | Commit and push local assets to your personal remote | `--name <name>` / `--label <label>`, `--message <text>` |
 | `orbit check` | Check the cache and enabled links | `--fix` with explicit Axon inputs |
-| `orbit clean` | Preview and confirm deletion of selected managed caches | `--label <label>`, `--yes` |
+| `orbit clean` | Preview and confirm deletion of selected managed caches | `--name <name>` / `--label <label>`, `--yes` |
 
-Labels are case-sensitive. Repeated `--label` flags use **OR** matching; no matches is an error. Vendor downloads run at most 4 concurrent Git operations by default. Each Git operation has a two-minute timeout, adjustable with `--timeout`.
+Use `--name` for exact asset names or `--label` for optional groups; the two flags are mutually exclusive. Both accept English-comma lists and repeated flags, trim surrounding whitespace, deduplicate values and use **OR** matching. Names and labels are case-sensitive. Unknown names, no matching labels, empty list items and Chinese commas (`，`) are errors. Selection also applies to `link`, `sync`, `check` and `clean`; explicit Axon coverage checks/repairs always compare the full configuration. Vendor downloads run at most 4 concurrent Git operations by default. Each Git operation has a two-minute timeout, adjustable with `--timeout`.
 
-Vendor downloads fetch a shallow snapshot of the configured version, rather than every upstream branch and its full history. The cache is internal; use the assembled files under `~/.orbit/repo`.
+Vendor downloads fetch a shallow snapshot of the configured Git ref, rather than every upstream branch and its full history. The cache is internal; use the assembled files under `~/.orbit/repo`.
 
 ```sh
-orbit vendor sync --label skills --label workflows --jobs 4
+# Replace these asset names with names from your configuration.
+orbit vendor sync --name core-skill,go-review
+orbit vendor sync --name core-skill --name go-review
+orbit vendor sync --label skills,workflows --jobs 4
 ```
 
 ### Clean downloaded caches
@@ -136,12 +141,79 @@ Declare tool root directories once in the global `link_targets`, grouped by cate
 
 After changing an existing dependency's `link` to `false`, run `orbit link` again to remove symlinks at the current destinations that still point to that dependency's local asset directory, including dangling links. Matching links to the old cache location are also removed. Cache contents, local assets, real files, directories, and links pointing elsewhere are preserved. Cleanup works even when the cache is missing and respects `--label`. Old links at destinations no longer present in the configuration require manual handling.
 
-| Dependency field | Default or behavior when omitted |
-| --- | --- |
-| `name`, `source`, `version` | Required; names must be unique |
-| `subdir` | Defaults to `.`, using the whole repository |
-| `link` | Defaults to `false`; `orbit link` removes matching old links; download and publication remain available |
-| `mirror_dir` | Asset path inside the local repo; if omitted, download to cache only; required when linking is enabled |
+## Configuration reference
+
+`orbit.yaml` contains exactly one YAML mapping. Unknown fields, duplicate keys and incorrect types are rejected. Quote string versions such as `"1.0"`; use YAML booleans `true` / `false` for switches. These settings describe assets; `--jobs`, `--timeout` and `--message` are command-line flags, not YAML fields.
+
+### Top-level fields
+
+| Field | Type | Required / default | Meaning |
+| --- | --- | --- | --- |
+| `version` | string | Required; exactly `"1.0"` | Configuration format version, separate from the Orbit program version and each upstream dependency's version. |
+| `global_cache` | string path | Required; no automatic default | Internal Git cache root. The generated template uses `~/.orbit/cache`; downloaded assets for use by tools are assembled under `orbit_repo.local_path`. |
+| `orbit_repo` | mapping | Optional when parsing; required for `vendor sync`, `sync`, and creating enabled asset links | Personal Git repository settings, detailed below. Cache checks/cleanup can use a configuration without this section. |
+| `link_targets` | mapping of category to string-path list | Optional; no targets by default | Declare tool root directories once per category. Typical categories are `skills`, `workflows`, `scripts` and `commands`; custom single-component category names are also supported. Each enabled dependency needs at least one target for its category. |
+| `dependencies` | list of mappings | Optional; defaults to an empty list | Upstream assets to download, assemble, link and publish. Use `[]` for an initially empty configuration. |
+
+### Personal repository: `orbit_repo`
+
+| Field | Type | Required / default | Meaning |
+| --- | --- | --- | --- |
+| `remote` | string | Required when `orbit_repo` is present | Personal Git remote, for example `git@github.com:YOUR_ACCOUNT/orbit-repo.git` or an HTTPS URL. Passed to Git as supplied; for a local remote, use an absolute path rather than relying on Orbit to expand `~` or a relative path. |
+| `branch` | string | Required; no default | Personal destination branch name, for example `main`. Use the branch name rather than `refs/heads/main`; this field does not select an upstream dependency's version. |
+| `local_path` | string path | Defaults to `~/.orbit/repo` when omitted or empty | Local checkout containing assembled assets and `.orbit-manifest.yaml`. This is separate from the internal cache. |
+
+The remote must already exist and Git must have access to it. Vendor sync may clone it to preserve existing history and unmanaged files, but does not commit or push; `orbit sync` publishes local managed assets.
+
+### Upstream assets: `dependencies[]`
+
+| Field | Type | Required / default | Meaning |
+| --- | --- | --- | --- |
+| `name` | string | Required, nonempty and unique | Asset identifier used in reports and the manifest. Storage and link destinations are selected by `mirror_dir`, not by this name. |
+| `source` | string | Required, nonempty | Upstream Git HTTPS/SSH URL or local repository path. A relative local path such as `./vendor/example` resolves from the configuration directory; `~/...` is supported for local paths. |
+| `ref` | string | Required; no default | Upstream branch, tag or full 40-character commit SHA. Prefer `refs/heads/main` for a branch and `refs/tags/v1.2.3` for a tag. Short branch/tag names are accepted unless ambiguous; a branch and tag with the same name cause an error. Branches follow updates, commit SHAs pin content, and changed cached tags are rejected. |
+| `subdir` | string relative path | Defaults to `.` when omitted or empty | Directory to select inside the upstream checkout, for example `skills/skill-creator`. `.` selects the whole repository. This must identify a directory, not an individual file. |
+| `mirror_dir` | string relative path | Optional; required when `link: true` | Destination inside the personal local repo, for example `skills/skill-creator`. Omit it to download this dependency into the cache only. Its first path component selects the link category. |
+| `vendor` | boolean | Defaults to `true` | Whether `orbit vendor sync` downloads and assembles this asset. `false` skips it, preserving existing local files and manifest entries even during full refreshes. It does not disable linking or `orbit sync` publication. Explicit `--name` does not override this switch. |
+| `link` | boolean | Defaults to `false` | Whether `orbit link` should create links for this asset. `false` preserves download/publication behavior and removes matching previously owned links when `orbit link` is run; it does not delete asset files. |
+| `labels` | list of strings | Defaults to `[]`; entries must be nonempty | Explicit grouping tags, for example `["core", "backend"]`. Labels are not inferred from `mirror_dir` or category. Without `--name` or `--label`, commands select all dependencies. `--label core,backend` selects the union of exact matches; repeated flags also work. No match is an error. Labels are optional and appear last, after `vendor` and `link`; block-style lists and inline lists are equivalent. |
+
+Legacy dependency `version` remains accepted as an alias for `ref`; specifying both keys is an error, even if one is empty. Generated/repaired entries use `ref`. The top-level `version: "1.0"` still describes the YAML format. Existing cache identities and manifest provenance remain compatible.
+
+A disabled vendor can still use `link: true` when its managed local asset already exists. Missing local assets cause a clear link error. Operational `orbit check` skips cache validation for disabled vendors and still checks their enabled links.
+
+### Paths and link mapping
+
+Orbit expands `~` / `~/...` in filesystem settings (`global_cache`, `orbit_repo.local_path`, `link_targets` values and local dependency paths); `~otheruser` and shell-variable expansion such as `$HOME` are not supported. Relative filesystem paths resolve from the directory containing `orbit.yaml`, not the terminal's working directory. Git remote strings follow the `remote` rule above. On Windows, prefer forward slashes or single-quoted YAML paths to avoid backslash escape sequences.
+
+`subdir` and `mirror_dir` are paths within repositories: no absolute paths, `~`, `..` components, `.git` components or `.orbit-manifest.yaml` components. `subdir` may be `.`, but `mirror_dir` must name a non-root destination. Separate dependencies' `mirror_dir` values cannot be equal or nested. Category names must be single safe relative path components.
+
+Cache and local repo roots cannot overlap or be the filesystem root or home directory; their existing ancestors cannot be symlinks. Computed enabled link destinations must not overlap managed storage or each other, and must not be the filesystem root or home directory. At link time, real files/directories and symlinked parents are protected even with `--force`.
+
+With the other top-level settings already configured, this excerpt links one asset to two tools:
+
+```yaml
+link_targets:
+  skills:
+    - "~/.claude/skills"
+    - "~/.codex/skills"
+
+dependencies:
+  - name: "core-skill"
+    source: "https://github.com/anthropics/skills.git"
+    ref: "refs/heads/main"
+    subdir: "skills/skill-creator"
+    mirror_dir: "skills/core-skill"
+    vendor: true
+    link: true
+    labels:
+      - core
+      - backend
+```
+
+The selected upstream directory is assembled into `~/.orbit/repo/skills/core-skill` when using the default `local_path`. `orbit link` maps it to both `~/.claude/skills/core-skill` and `~/.codex/skills/core-skill`. The suffix after `skills/` is appended to each tool root. For multiple skills, use distinct destinations such as `skills/core-skill` and `skills/another-skill` rather than assigning both to `skills`.
+
+Dependencies with the same `source` and `ref` share one cache even when their names or subdirectories differ. Labels select dependencies, not separate cache copies: cleaning a selected shared cache also removes that cache for unselected dependencies sharing it. Assembled repo assets and links to them remain available.
 
 ## Publish to GitHub
 
@@ -160,10 +232,10 @@ You can omit `local_path`; it defaults to `~/.orbit/repo`. After downloading and
 orbit sync
 ```
 
-- `vendor sync` prepares all selected assets before replacing managed directories. Failed downloads or copy validation leave the previous assembled assets intact. A full vendor refresh removes only stale assets previously managed by Orbit; label-filtered refreshes preserve unselected assets. Local edits in refreshed assets are discarded to match upstream.
+- `vendor sync` prepares all selected assets before replacing managed directories. Failed downloads or copy validation leave the previous assembled assets intact. A full vendor refresh removes only stale assets previously managed by Orbit and preserves assets with `vendor: false`; name/label-filtered refreshes preserve unselected assets. Local edits in refreshed assets are discarded to match upstream.
 - The first vendor operation may clone your personal remote to preserve its history and unmanaged files such as a README. It creates no commit and performs no push. Later downloads do not publish pending local changes.
 - Vendor assembly excludes nested `.git` entries and applies Gitignore-style rules from the `.orbitignore` beside your configuration. Internal relative symlinks are preserved; absolute or escaping links are rejected. `.env` is not implicitly excluded. Publication rejects nested Git repositories added locally.
-- `sync` publishes the current managed local assets, including your edits, without requiring the cache or contacting upstream dependencies. Unmanaged working-tree changes and existing staged changes must be handled manually. An untracked `.DS_Store` at the repository root is preserved without being published, even when Git ignores it; tracked or staged changes to it still require manual handling. `--label` stages only selected assets and their manifest entries, leaving other local changes pending.
+- `sync` publishes the current managed local assets, including your edits, without requiring the cache or contacting upstream dependencies. Unmanaged working-tree changes and existing staged changes must be handled manually. An untracked `.DS_Store` at the repository root is preserved without being published, even when Git ignores it; tracked or staged changes to it still require manual handling. `--name` or `--label` stages only selected assets and their manifest entries, leaving other local changes pending.
 - `.orbit-manifest.yaml` records upstream sources and resolved commits used for assembly; it does not claim that later local edits match those commits. Unchanged content produces no empty commit. A failed push retains the local commit for retry. Git attributes or filters that transform asset bytes cause publication to fail and clear its staging changes while preserving local files.
 
 ## Check and repair an Axon migration
@@ -182,13 +254,13 @@ orbit check --axon-config "$HOME/.axon/axon.yaml" \
   --vendors "$HOME/.axon/repo/axon.vendors.yaml" --fix
 ```
 
-Repair saves a byte-for-byte backup first and reports its changes. YAML comments and formatting are normalized. Custom dependencies, labels, and `link: false` settings are preserved. Source conflicts are not automatically overwritten, and the original Axon files are not modified.
+Repair saves a byte-for-byte backup first and reports its changes. YAML comments and formatting are normalized. Custom dependencies, labels, `vendor: false` and `link: false` settings are preserved; rewritten legacy dependency `version` keys use `ref`. Source conflicts are not automatically overwritten, and the original Axon files are not modified.
 
 Add `--repo "$HOME/.orbit/repo"` to either command to compare the local repository's file inventory and report unconfigured assets. This checks neither file bytes nor versions and does not guess unknown assets' sources.
 
 ## Releases and binary installation
 
-Download stable packages from [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases). The first stable version is **v1.0.0**. Review candidates are also available from successful [Stable release checks runs](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml); candidate artifacts are published only after approval and verification of the merged commit.
+Download stable packages from [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases). This documentation covers **v1.1.0**. Review candidates are also available from successful [Stable release checks runs](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml); candidate artifacts are published only after approval and verification of the merged commit.
 
 | Platform | Archive |
 | --- | --- |
@@ -233,7 +305,7 @@ python3 -m unittest discover -s tests/acceptance -v
 python3 -m unittest discover -s tests -p test_synthetic_config.py -v
 ```
 
-On Windows build `orbit.exe` instead. Set `ORBIT_BIN` to test another binary. CI tests the actual extracted candidate on Go 1.27.3 and a development binary on Go 1.26.10. Fixtures use temporary local repositories and synthetic assets; no personal Axon inventory is required. Candidate builders run `python3 tools/release.py build --version v1.0.0` from a clean committed checkout using native Go 1.27.3; this creates files under `dist/` and never publishes a release.
+On Windows build `orbit.exe` instead. Set `ORBIT_BIN` to test another binary. CI tests the actual extracted candidate on Go 1.27.3 and a development binary on Go 1.26.10. Fixtures use temporary local repositories and synthetic assets; no personal Axon inventory is required. Candidate builders run `python3 tools/release.py build --version v1.1.0` from a clean committed checkout using native Go 1.27.3; this creates files under `dist/` and never publishes a release.
 
 ## Limitations and behavior
 

@@ -215,7 +215,7 @@ func (e *Engine) Assemble(ctx context.Context, deps []config.Dependency, full bo
 		if err = copyAsset(source, filepath.Join(stage, filepath.FromSlash(d.MirrorDir)), d.MirrorDir, matcher); err != nil {
 			return err
 		}
-		entries = append(entries, Entry{d.Name, d.Source, d.Version, s.Commit, d.Subdir, d.MirrorDir})
+		entries = append(entries, Entry{d.Name, d.Source, d.Ref, s.Commit, d.Subdir, d.MirrorDir})
 	}
 	l, err := acquire(r.LocalPath + ".orbit.lock")
 	if err != nil {
@@ -234,12 +234,20 @@ func (e *Engine) Assemble(ctx context.Context, deps []config.Dependency, full bo
 	for _, d := range deps {
 		selected[d.Name] = true
 	}
+	// A full refresh may remove obsolete assets, but disabled vendors keep their
+	// existing snapshot and provenance even if another asset shares their cache.
+	preserve := map[string]bool{}
+	for _, d := range e.Config.Dependencies {
+		if !d.Vendoring() {
+			preserve[d.Name] = true
+		}
+	}
 	var result []Entry
 	remove := map[string]bool{}
 	owned := map[string]bool{}
 	for _, d := range old.Dependencies {
 		owned[d.MirrorDir] = true
-		if full || selected[d.Name] {
+		if full && !preserve[d.Name] || selected[d.Name] {
 			remove[d.MirrorDir] = true
 		} else {
 			result = append(result, d)

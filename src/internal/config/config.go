@@ -17,9 +17,11 @@ import (
 type Dependency struct {
 	Name      string   `yaml:"name" json:"name"`
 	Source    string   `yaml:"source" json:"source"`
-	Version   string   `yaml:"version" json:"version"`
+	Ref       string   `yaml:"ref" json:"ref"`
+	Version   string   `yaml:"version,omitempty" json:"-"`
 	Subdir    string   `yaml:"subdir,omitempty" json:"subdir"`
 	MirrorDir string   `yaml:"mirror_dir,omitempty" json:"mirror_dir"`
+	Vendor    *bool    `yaml:"vendor,omitempty" json:"vendor,omitempty"`
 	Link      bool     `yaml:"link" json:"link"`
 	Labels    []string `yaml:"labels,omitempty" json:"labels"`
 }
@@ -119,6 +121,13 @@ func Parse(b []byte) (*Config, error) {
 	if err := scalarTypes(node.Content[0], reflect.TypeOf(c), "config"); err != nil {
 		return nil, err
 	}
+	for i := range c.Dependencies {
+		d := &c.Dependencies[i]
+		if d.Ref == "" {
+			d.Ref = d.Version
+		}
+		d.Version = "" // Legacy input is always written back using ref.
+	}
 	return &c, nil
 }
 
@@ -129,7 +138,7 @@ func scalarTypes(n *yaml.Node, t reflect.Type, path string) error {
 		return scalarTypes(n.Alias, t, path)
 	}
 	if t.Kind() == reflect.Pointer {
-		if n.Tag == "!!null" {
+		if n.Tag == "!!null" && t.Elem().Kind() != reflect.Bool {
 			return nil
 		}
 		return scalarTypes(n, t.Elem(), path)
@@ -147,6 +156,24 @@ func scalarTypes(n *yaml.Node, t reflect.Type, path string) error {
 	case reflect.Struct:
 		if n.Kind != yaml.MappingNode {
 			return bad()
+		}
+		if t == reflect.TypeOf(Dependency{}) {
+			// Resolve YAML merges too, so aliases cannot bypass field conflicts or types.
+			var fields map[string]yaml.Node
+			if err := n.Decode(&fields); err != nil {
+				return err
+			}
+			_, ref := fields["ref"]
+			_, version := fields["version"]
+			if ref && version {
+				return fmt.Errorf("line %d: dependency ref and legacy version are mutually exclusive", n.Line)
+			}
+			resolved := *n
+			resolved.Content = nil
+			for key, value := range fields {
+				resolved.Content = append(resolved.Content, &yaml.Node{Value: key}, &value)
+			}
+			n = &resolved
 		}
 		for i := 0; i < len(n.Content); i += 2 {
 			key := n.Content[i].Value
@@ -329,15 +356,15 @@ func (c *Config) resolve(coverage bool) error {
 	var mirrors, links []string
 	for i := range c.Dependencies {
 		d := &c.Dependencies[i]
-		if strings.TrimSpace(d.Name) == "" || strings.TrimSpace(d.Source) == "" || strings.TrimSpace(d.Version) == "" {
-			return fmt.Errorf("dependency %d: name, source and version are required", i+1)
+		if strings.TrimSpace(d.Name) == "" || strings.TrimSpace(d.Source) == "" || strings.TrimSpace(d.Ref) == "" {
+			return fmt.Errorf("dependency %d: name, source and ref are required", i+1)
 		}
 		if names[d.Name] {
 			return fmt.Errorf("duplicate dependency name %q", d.Name)
 		}
 		names[d.Name] = true
-		if strings.HasPrefix(d.Source, "-") || strings.HasPrefix(d.Version, "-") || strings.ContainsAny(d.Version, "\n\r\x00") {
-			return fmt.Errorf("invalid source or version for %s", d.Name)
+		if strings.HasPrefix(d.Source, "-") || strings.HasPrefix(d.Ref, "-") || strings.ContainsAny(d.Ref, "\n\r\x00") {
+			return fmt.Errorf("invalid source or ref for %s", d.Name)
 		}
 		if !strings.Contains(d.Source, ":") {
 			d.Source, err = c.Expand(d.Source)
@@ -416,10 +443,59 @@ func (c *Config) Targets(d Dependency) []string {
 	return targets
 }
 
-func (c *Config) Select(labels []string) ([]Dependency, error) {
+// Vendoring defaults to true so existing configurations keep downloading assets.
+func (d Dependency) Vendoring() bool { return d.Vendor == nil || *d.Vendor }
+
+func selectionValues(values []string, flag string) ([]string, error) {
+	var out []string
+	seen := map[string]bool{}
+	for _, value := range values {
+		if strings.Contains(value, "，") {
+			return nil, fmt.Errorf("--%s requires an English comma (,), not a Chinese comma (，)", flag)
+		}
+		for _, item := range strings.Split(value, ",") {
+			item = strings.TrimSpace(item)
+			if item == "" {
+				return nil, fmt.Errorf("--%s contains an empty selection", flag)
+			}
+			if !seen[item] {
+				out = append(out, item)
+				seen[item] = true
+			}
+		}
+	}
+	return out, nil
+}
+
+func (c *Config) Select(labels, names []string) ([]Dependency, error) {
+	if len(labels) > 0 && len(names) > 0 {
+		return nil, fmt.Errorf("--name and --label are mutually exclusive")
+	}
+	labels, err := selectionValues(labels, "label")
+	if err != nil {
+		return nil, err
+	}
+	names, err = selectionValues(names, "name")
+	if err != nil {
+		return nil, err
+	}
+	wanted := map[string]bool{}
+	for _, name := range names {
+		found := false
+		for _, d := range c.Dependencies {
+			if d.Name == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("unknown dependency name %q", name)
+		}
+		wanted[name] = true
+	}
 	var out []Dependency
 	for _, d := range c.Dependencies {
-		match := len(labels) == 0
+		match := len(labels) == 0 && len(names) == 0 || wanted[d.Name]
 		for _, want := range labels {
 			for _, got := range d.Labels {
 				if want == got {

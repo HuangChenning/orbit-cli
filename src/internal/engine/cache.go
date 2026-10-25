@@ -55,7 +55,7 @@ func (e *Engine) git(ctx context.Context, dir string, args ...string) (string, e
 }
 
 func identity(d config.Dependency) string {
-	h := sha256.Sum256([]byte(d.Source + "\x00" + d.Version))
+	h := sha256.Sum256([]byte(d.Source + "\x00" + d.Ref))
 	return hex.EncodeToString(h[:])
 }
 func (e *Engine) cache(d config.Dependency) string {
@@ -104,7 +104,7 @@ func (e *Engine) readState(d config.Dependency) (state, error) {
 	if err = json.Unmarshal(b, &s); err != nil {
 		return s, err
 	}
-	if s.Source != d.Source || s.Version != d.Version {
+	if s.Source != d.Source || s.Version != d.Ref {
 		return s, fmt.Errorf("cache ownership mismatch for %s", d.Name)
 	}
 	return s, nil
@@ -215,7 +215,7 @@ func (e *Engine) syncOne(ctx context.Context, d config.Dependency) error {
 	}
 	s, serr := e.readState(d)
 	if _, err = os.Lstat(p); os.IsNotExist(err) {
-		s = state{Source: d.Source, Version: d.Version}
+		s = state{Source: d.Source, Version: d.Ref}
 		temporary, err := os.MkdirTemp(e.Config.GlobalCache, ".init-")
 		if err != nil {
 			return err
@@ -241,7 +241,7 @@ func (e *Engine) syncOne(ctx context.Context, d config.Dependency) error {
 	if err = e.verifyRepository(ctx, d); err != nil {
 		return err
 	}
-	v := d.Version
+	v := d.Ref
 	ref := v
 	tag := ""
 	refspec := v

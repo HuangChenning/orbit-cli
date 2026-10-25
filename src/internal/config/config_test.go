@@ -74,3 +74,35 @@ func TestOverlappingManagedPathsAreRejected(t *testing.T) {
 		}
 	}
 }
+
+func TestDependencyRefCompatibilityAndStrictControls(t *testing.T) {
+	for _, tc := range []struct {
+		name, fields string
+		valid        bool
+	}{
+		{"canonical", "ref: refs/heads/main", true},
+		{"legacy", "version: refs/heads/main", true},
+		{"disabled", "ref: main, vendor: false", true},
+		{"enabled", "ref: main, vendor: true", true},
+		{"both", "ref: main, version: main", false},
+		{"merged ref and legacy", "<<: {ref: main}, version: main", false},
+		{"merged null vendor", "<<: {vendor: null}, ref: main", false},
+		{"empty ref with legacy", "ref: '', version: main", false},
+		{"empty legacy with ref", "ref: main, version: ''", false},
+		{"numeric ref", "ref: 123", false},
+		{"quoted switch", "ref: main, vendor: 'false'", false},
+		{"null switch", "ref: main, vendor: null", false},
+		{"unknown field", "ref: main, vendor: true, invented: true", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := Parse([]byte("version: '1.0'\nglobal_cache: cache\ndependencies: [{name: fixture, source: upstream, " + tc.fields + "}]\n"))
+			if err == nil {
+				c.Path = filepath.Join(t.TempDir(), "orbit.yaml")
+				err = c.Resolve()
+			}
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v, got error %v", tc.valid, err)
+			}
+		})
+	}
+}
