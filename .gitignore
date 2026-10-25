@@ -20,6 +20,7 @@ __pycache__/
 !/src/internal/config/config_test.go
 !/src/internal/engine/mirror_test.go
 !/src/internal/engine/link_test.go
+!/src/internal/updater/updater_test.go
 /NOTES.md
 /workflows/
 /dist/

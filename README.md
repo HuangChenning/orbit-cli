@@ -90,6 +90,8 @@ The downloaded files appear in `~/.orbit/repo/skills/skill-creator`. This exampl
 
 | Command | Purpose | Common options |
 | --- | --- | --- |
+| `orbit update check` | Check the latest stable GitHub Release | No asset configuration required |
+| `orbit update` | Download, verify SHA256 and replace the current program | No asset configuration required |
 | `orbit init` | Generate configuration without overwriting an existing file | `--path <dir>` |
 | `orbit vendor sync` | Download upstream and assemble local assets | `--label <label>`, `--jobs <n>` |
 | `orbit link` | Create or remove matching links according to the `link` switch | `--label <label>`, `--force` |
@@ -206,6 +208,17 @@ On macOS / Linux, extract your archive, copy `orbit` to `~/.orbit/bin`, add that
 [Go runtime requirements](https://go.dev/wiki/MinimumRequirements) also specify Linux kernel 3.2+ and Windows 10+ / Windows Server 2016+. These are toolchain minima; Orbit native acceptance uses only the runner images listed above. WSL 1 is unsupported.
 
 If upgrading an earlier unpublished checkout, rebuild from `./src`, set `orbit_repo.local_path` to `~/.orbit/repo`, use `orbit vendor sync` for downloads and `orbit sync` for pushes. Run `orbit link` to migrate matching old cache links, then `orbit clean` to remove selected owned caches. Existing unrelated paths require manual review.
+
+## Online updates
+
+```sh
+orbit update check
+orbit update
+```
+
+Updates follow the latest **stable** GitHub Release for your operating system and architecture. Pre-releases are excluded. Orbit verifies the matching archive against the release's `SHA256SUMS` before installing; an equal or newer installed stable version is kept. A development build can move to a published stable version. These commands require HTTPS access to GitHub, without an asset configuration or Git connection.
+
+No stable Release has been published yet, so update checks currently report that no stable release is available. CI candidate artifacts are not selected by the updater. Download, checksum or extraction failures preserve the installed program. Installation uses a temporary file beside the actual executable and requires write permission to that directory; no privilege elevation is attempted. If Windows keeps the old running program locked, Orbit reports the retained backup path for removal after the old process exits. SHA256 verifies integrity; the packages remain unsigned.
 
 ## Development checks
 

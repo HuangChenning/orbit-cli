@@ -23,6 +23,7 @@ The CLI contracts are in `acceptance/test_cli.py`, configuration repair contract
 | Coverage omissions, conflicts, backups, idempotence and custom settings | All nine `test_synthetic_config.py` contracts |
 | Locks, subprocess termination, failed initialization retries and rollback | `test_concurrent_sync_does_not_corrupt_shared_cache`, `test_git_timeout_terminates_child_processes_and_releases_cache_lock`, failed-clone/cache contracts, `TestRollbackRestoresOldSnapshotOverPartialCopy` |
 | Dependency names remain metadata; manifest/path ownership | `test_sync_never_uses_dependency_names_as_validation_paths`, `test_sync_dependency_name_cannot_collide_with_validation_manifest`, `test_partial_publish_rejects_manifest_ownership_overlap` |
+| Online stable updates and installation preservation | `src/internal/updater/updater_test.go`: synthetic release HTTP server, exact native archive names, numeric versions/no downgrade, missing/duplicate release assets, SHA256 mismatch, unsafe archive rejection, temporary replacement/rollback and replacement of a running executable |
 | Windows symlink permission remedy | `TestSymlinkPermissionErrorPreservesCauseAndExplainsWindowsRemedy` verifies the injected permission error and native platform guidance |
 
 POSIX executable-bit assertions run within the full byte-preservation contract; Windows still runs its byte and publication assertions. Windows success-path tests require native symlink privileges. The permission-error unit contract uses a synthetic error without changing machine ACLs.

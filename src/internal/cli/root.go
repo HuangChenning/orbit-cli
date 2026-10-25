@@ -13,6 +13,7 @@ import (
 
 	"github.com/HuangChenning/orbit-cli/src/internal/config"
 	"github.com/HuangChenning/orbit-cli/src/internal/engine"
+	"github.com/HuangChenning/orbit-cli/src/internal/updater"
 	"github.com/spf13/cobra"
 )
 
@@ -169,6 +170,23 @@ func Execute() error {
 	}}
 	clean.Flags().BoolVar(&cleanYes, "yes", false, "confirm cache removal")
 	root.AddCommand(clean)
+	update := &cobra.Command{Use: "update", Short: "Install the latest stable Orbit release", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		result, err := updater.Update(cmd.Context(), Version)
+		if err != nil {
+			return err
+		}
+		printUpdateResult(cmd, result, true)
+		return nil
+	}}
+	update.AddCommand(&cobra.Command{Use: "check", Short: "Check the latest stable Orbit release", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		result, err := updater.Check(cmd.Context(), Version)
+		if err != nil {
+			return err
+		}
+		printUpdateResult(cmd, result, false)
+		return nil
+	}})
+	root.AddCommand(update)
 	addCheck(root, load)
 	return root.ExecuteContext(ctx)
 }
@@ -183,4 +201,18 @@ func confirm(cmd *cobra.Command, message string) error {
 		return fmt.Errorf("cancelled")
 	}
 	return nil
+}
+
+func printUpdateResult(cmd *cobra.Command, result updater.Result, installed bool) {
+	fmt.Fprintf(cmd.OutOrStdout(), "current: %s\nlatest: %s\n", result.Current, result.Latest)
+	if result.Available && installed {
+		fmt.Fprintln(cmd.OutOrStdout(), "Updated to", result.Latest)
+	} else if result.Available {
+		fmt.Fprintln(cmd.OutOrStdout(), "Update available; run orbit update")
+	} else {
+		fmt.Fprintln(cmd.OutOrStdout(), "Already up to date")
+	}
+	if result.Backup != "" {
+		fmt.Fprintln(cmd.OutOrStdout(), "Previous binary retained at:", result.Backup)
+	}
 }

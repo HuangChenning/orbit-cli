@@ -210,6 +210,18 @@ class OrbitCLIContracts(OrbitCLIFixture):
         self.assertFalse((self.root / "mirror").exists())
         self.assertEqual(outside.read_text(), "must remain outside selected asset")
 
+    def test_update_help_and_argument_validation_need_no_configuration_or_git(self):
+        self.path.unlink()
+        home = self.root / "empty-home"
+        self.env.update(PATH="", HOME=str(home), USERPROFILE=str(home))
+        for command in (("update", "--help"), ("update", "check", "--help")):
+            result = self.orbit(*command, explicit=False)
+            self.assertIn("stable", result.stdout)
+        result = self.orbit("update", "check", "unexpected", explicit=False, success=False)
+        self.assertIn("unexpected", result.stderr)
+        self.assertFalse((self.root / "cache").exists())
+        self.assertFalse(home.exists())
+
     def test_version_requires_neither_configuration_nor_git(self):
         self.path.unlink()
         self.env.update(PATH=str(self.root / "no-programs"),

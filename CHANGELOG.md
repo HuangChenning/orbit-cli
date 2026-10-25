@@ -8,6 +8,7 @@
 - Filter by labels, check configuration coverage, repair known omissions and safely clean owned caches.
 - Protect real files, unmanaged changes, manifest ownership and publication bytes; isolate validation paths from dependency names.
 - Add native macOS Intel/Apple Silicon, Linux amd64 and Windows amd64 acceptance checks and unsigned candidate packages with SHA256 checksums.
+- Check the latest stable GitHub Release with `orbit update check`; install a verified native package with `orbit update`, preserving the current program on download or integrity failure.
 - Identify builds through `orbit --version`. Source builds use `dev`; release candidates include version, commit and build metadata.
 
 ### Compatibility

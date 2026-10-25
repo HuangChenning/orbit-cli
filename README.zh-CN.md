@@ -90,6 +90,8 @@ orbit check
 
 | 命令 | 作用 | 常用选项 |
 | --- | --- | --- |
+| `orbit update check` | 检查 GitHub 最新稳定版 | 无需资产配置 |
+| `orbit update` | 下载、校验 SHA256 后替换当前程序 | 无需资产配置 |
 | `orbit init` | 生成配置，不覆盖已有文件 | `--path <dir>` |
 | `orbit vendor sync` | 下载上游并组装本地资产 | `--label <label>`、`--jobs <n>` |
 | `orbit link` | 按 `link` 开关建立或移除匹配的链接 | `--label <label>`、`--force` |
@@ -206,6 +208,17 @@ macOS / Linux 解压后，将 `orbit` 放入 `~/.orbit/bin` 并加入 PATH，再
 [Go 官方运行要求](https://go.dev/wiki/MinimumRequirements)还包括 Linux 内核 3.2+、Windows 10+ / Windows Server 2016+。这些是工具链下限，Orbit 的原生验收范围仅限上表 runner 系统；不支持 WSL 1。
 
 若从早期未发布版本升级，请从 `./src` 重新构建，将 `orbit_repo.local_path` 设置为 `~/.orbit/repo`，使用 `orbit vendor sync` 下载、`orbit sync` 提交推送。运行 `orbit link` 迁移匹配的旧缓存链接，再用 `orbit clean` 清理选中的受管理缓存；其他已有路径需手工检查。
+
+## 在线更新
+
+```sh
+orbit update check
+orbit update
+```
+
+更新只跟随 GitHub 最新**稳定 Release**，按本机系统与架构选择包，排除预发布版本。Orbit 安装前对照 Release 的 `SHA256SUMS` 校验压缩包；当前稳定版本相同或更新时保留当前程序，开发构建可以升级到已发布稳定版。这两个命令需要通过 HTTPS 访问 GitHub，无需资产配置或 Git 连接。
+
+目前尚未发布稳定 Release，检查更新会明确提示暂无稳定版本；CI 候选产物不会被在线更新选中。下载、校验或解包失败时保留当前程序，安装在实际可执行文件所在目录使用临时文件，需要该目录的写权限，不尝试提权。若 Windows 锁定旧的运行程序，Orbit 会提示保留的备份路径，可在旧进程结束后删除。SHA256 用于完整性校验，安装包仍未签名。
 
 ## 开发检查
 
