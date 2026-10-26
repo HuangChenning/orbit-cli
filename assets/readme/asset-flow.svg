@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="384" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
-  <title id="title">Orbit: download locally, publish separately</title>
-  <desc id="desc">Vendor sync fetches upstream Git through an internal cache and assembles local assets in ~/.orbit/repo. Link maps these local assets to developer tools. Sync commits and pushes the local assets to a personal Git remote. No command writes back to upstream.</desc>
+  <title id="title">Orbit: restore across devices, update upstream, link and publish</title>
+  <desc id="desc">Pull restores personal Git assets into ~/.orbit/repo and registers local dependencies. Vendor sync fetches upstream through an internal cache. Link distributes local assets to developer tools; sync commits and pushes to the personal remote.</desc>
   <!-- Runtime overview. Source: internal/engine/{cache,link,mirror}.go. -->
   <rect width="1200" height="720" rx="16" fill="#F5F7FA"/>
   <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" fill="#172536">
@@ -38,6 +38,9 @@
       <text x="676" y="474" font-size="40" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="#F5F7FA">~/.orbit/repo</text>
     </g>
     <g id="push-connector" stroke="#3D5A80" stroke-width="2" fill="#3D5A80">
+      <path d="M780 588 V530" fill="none"/>
+      <path d="M774 530 L780 518 L786 530 Z" stroke="none"/>
+      <text x="666" y="554" font-size="36" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" stroke="none">pull</text>
       <path d="M890 506 V564" fill="none"/>
       <path d="M884 564 L890 576 L896 564 Z" stroke="none"/>
       <text x="918" y="554" font-size="40" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" stroke="none">sync</text>

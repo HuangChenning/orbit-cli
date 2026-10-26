@@ -63,10 +63,10 @@ jobs:
           sha = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
           suffix = '.exe' if os.name == 'nt' else ''
           if os.environ['CANDIDATE'] == 'true':
-              subprocess.run(['python', 'tools/release.py', 'build', '--version', 'v2.0.0'], check=True)
-              subprocess.run(['python', 'tools/release.py', 'verify', '--version', 'v2.0.0', '--commit', sha], check=True)
+              subprocess.run(['python', 'tools/release.py', 'build', '--version', 'v2.1.0'], check=True)
+              subprocess.run(['python', 'tools/release.py', 'verify', '--version', 'v2.1.0', '--commit', sha], check=True)
               binary = pathlib.Path('dist/installed/orbit' + suffix).resolve()
-              version = 'v2.0.0'
+              version = 'v2.1.0'
           else:
               binary = pathlib.Path('orbit' + suffix).resolve()
               subprocess.run(['go', 'build', '-o', str(binary), './src'], check=True)
@@ -106,10 +106,10 @@ jobs:
           merge-multiple: true
           path: dist
       - name: Check source identity and generate checksums
-        run: python tools/release.py checksums --version v2.0.0 --commit "$(git rev-parse HEAD)"
+        run: python tools/release.py checksums --version v2.1.0 --commit "$(git rev-parse HEAD)"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: orbit-v2.0.0-${{ github.event.pull_request.head.sha || github.sha }}
+          name: orbit-v2.1.0-${{ github.event.pull_request.head.sha || github.sha }}
           if-no-files-found: error
           path: |
             dist/*.tar.gz

@@ -23,7 +23,8 @@ link_targets:
   skills:
     - "~/.claude/skills"
 dependencies: []
-# Set orbit_repo.remote and branch before orbit vendor sync.
+# Set orbit_repo.remote and branch, then run orbit pull to restore existing personal assets.
+# Use orbit vendor sync to download explicitly configured upstream dependencies.
 # Default orbit_repo.local_path: ~/.orbit/repo.
 # Add dependencies with name, source, ref, subdir, mirror_dir, vendor, link and optional labels.
 # vendor defaults to true; link defaults to false; put labels last.
@@ -105,6 +106,20 @@ func Execute() error {
 	}
 	init.Flags().StringVarP(&initPath, "path", "p", defaultInitPath, "directory for orbit.yaml")
 	root.AddCommand(init)
+	var updateConfig bool
+	pull := &cobra.Command{Use: "pull", Short: "Restore personal assets and register them in local dependencies", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		if len(names) > 0 || len(labels) > 0 {
+			return fmt.Errorf("pull updates the complete personal repository; --name and --label are not supported")
+		}
+		e, _, err := load(false)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), "config:", e.Config.Path)
+		return e.Pull(cmd.Context(), updateConfig)
+	}}
+	pull.Flags().BoolVar(&updateConfig, "update-config", false, "accept conflicting remote source/ref/subdir/mirror_dir after review; preserve local switches and labels")
+	root.AddCommand(pull)
 	vendor := &cobra.Command{Use: "vendor", Short: "Manage upstream assets"}
 	vendor.AddCommand(&cobra.Command{Use: "sync", Short: "Download upstream assets into the local Orbit repository", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		e, d, err := load(false)
@@ -147,6 +162,20 @@ func Execute() error {
 		return e.Link(cmd.Context(), d, linkForce)
 	}}
 	link.Flags().BoolVarP(&linkForce, "force", "f", false, "replace conflicting symlinks only; real files are protected")
+	var cleanLinksYes bool
+	linkClean := &cobra.Command{Use: "clean", Short: "Preview removal of direct directory/broken symlinks under link_targets, including foreign links", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		if len(names) > 0 || len(labels) > 0 {
+			return fmt.Errorf("link clean applies to all link_targets; --name and --label are not supported")
+		}
+		e, _, err := load(false)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), "config:", e.Config.Path)
+		return e.CleanLinks(cmd.Context(), cleanLinksYes)
+	}}
+	linkClean.Flags().BoolVar(&cleanLinksYes, "yes", false, "remove previewed directory/broken symlinks, including Axon and other foreign links; preserve targets")
+	link.AddCommand(linkClean)
 	root.AddCommand(link)
 	var force, yes bool
 	var message string

@@ -10,7 +10,7 @@ Go 1.26 / 1.27 · System Git · Declarative configuration
 
 ## Overview
 
-Orbit helps developers reuse **skills, workflows, scripts, and commands** across tools and projects. `orbit vendor sync` downloads upstream assets into `~/.orbit/repo`, `orbit link` distributes them through symlinks, and `orbit sync` commits and pushes the local assets to your personal Git repository.
+Orbit helps developers reuse **skills, workflows, scripts, and commands** across tools, projects and devices. `orbit pull` restores assets from your personal Git repository and registers them locally. `orbit vendor sync` downloads upstream assets into `~/.orbit/repo`, `orbit link` distributes them through symlinks, and `orbit sync` commits and pushes local assets to your personal Git repository.
 
 ## Example output
 
@@ -33,11 +33,13 @@ $ orbit check
 
 <img src="assets/readme/asset-flow.svg" width="640" alt="Orbit asset flow: vendor sync downloads upstream Git through an internal cache into the local asset repository; link maps local assets to developer tools; sync commits and pushes local assets to your personal Git remote.">
 
-`vendor sync` downloads and assembles assets locally without committing or pushing. `link` creates or removes tool links. `sync` commits and pushes local assets without downloading upstream or overwriting local content from the cache. Nothing writes back to upstream.
+`pull` restores or fast-forwards the personal repository and refreshes local dependencies. `vendor sync` downloads and assembles upstream assets without committing or pushing. `link` creates or removes tool links. `sync` commits and pushes local assets without downloading upstream or overwriting local content from the cache. Nothing writes back to upstream. New devices should start with [Restore on another device](#restore-on-another-device).
 
 ## Quick start
 
 Install with [Homebrew](https://brew.sh) on macOS (Apple Silicon / Intel) or Linux amd64:
+
+On Ubuntu, [install Homebrew first](#ubuntu-brew-command-not-found) if `brew` is unavailable.
 
 ```sh
 brew install HuangChenning/tap/orbit
@@ -107,8 +109,10 @@ The downloaded files appear in `~/.orbit/repo/skills/skill-creator`. This exampl
 | `orbit update check` | Check the latest stable GitHub Release | No asset configuration required |
 | `orbit update` | Download, verify SHA256 and replace the current program | No asset configuration required |
 | `orbit init` | Generate configuration without overwriting an existing file | `--path <dir>` |
+| `orbit pull` | Restore/update the personal repository and register its assets locally | `--update-config` to explicitly accept conflicting asset identities |
 | `orbit vendor sync` | Download upstream and assemble local assets | `--name <name>` / `--label <label>`, `--jobs <n>` |
 | `orbit link` | Create or remove matching links according to the `link` switch | `--name <name>` / `--label <label>`, `--force` |
+| `orbit link clean` | Preview direct directory/broken symlinks under tool roots, including Axon links | `--yes` to remove the links |
 | `orbit sync` | Commit and push local assets to your personal remote | `--name <name>` / `--label <label>`, `--message <text>` |
 | `orbit check` | Check the cache and enabled links, or inspect duplicate selections | `--duplicates`; `--fix` with explicit Axon inputs |
 | `orbit clean` | Preview and confirm deletion of selected managed caches | `--name <name>` / `--label <label>`, `--yes` |
@@ -229,6 +233,47 @@ The selected upstream directory is assembled into `~/.orbit/repo/skills/core-ski
 
 Dependencies with the same `source` and `ref` share one cache even when their names or subdirectories differ. Labels select dependencies, not separate cache copies: cleaning a selected shared cache also removes that cache for unselected dependencies sharing it. Assembled repo assets and links to them remain available.
 
+## Restore on another device
+
+Run `orbit init`, then edit `~/.orbit/orbit.yaml`. Point it at your existing personal repository and set this device's tool directories; no upstream dependencies are required:
+
+```yaml
+version: "1.0"
+global_cache: "~/.orbit/cache"
+orbit_repo:
+  remote: "https://github.com/YOUR_ACCOUNT/orbit-repo.git"
+  branch: "main"
+  local_path: "~/.orbit/repo"
+link_targets:
+  skills:
+    - "~/.claude/skills"
+dependencies: []
+```
+
+```sh
+orbit pull
+orbit link
+orbit check
+```
+
+The remote must contain assets published by Orbit and `.orbit-manifest.yaml`; this device's Git credentials must permit access. `pull` restores the configured branch without accessing upstream sources or caches. Later pulls require a clean working tree and fast-forward history. Local changes (including untracked/ignored files), local-only commits and divergence stop the operation without discarding work. There is no automatic stash, rebase or force mode. `pull` updates the entire repository; `--name` and `--label` are unsupported.
+
+Before changing local assets, Orbit validates the manifest, asset paths and candidate configuration. New dependencies use canonical `ref`, `vendor: false`, and `link: true` only for categories with local `link_targets`. Existing switches, labels, machine-specific targets and unrelated declarations are preserved. Conflicting `source`/`ref`/`subdir`/`mirror_dir` identities show both values and stop the pull; review them before accepting with `orbit pull --update-config`. This flag does not bypass path/overlap validation or overwrite local switches. Identity fields using YAML anchors or aliases must be made explicit before updating, so unrelated declarations cannot change through an alias.
+
+Configuration is written atomically, detecting concurrent edits instead of overwriting them. Unchanged registrations preserve the original file bytes. A late configuration write failure is reported; an existing repository may already have advanced, so review configuration and retry `pull`. Declarations absent from the remote manifest remain local; review declarations for remotely deleted assets before publication. The manifest does not carry labels, so new registrations have no labels.
+
+### Remove old Axon or other tool links
+
+Preview direct directory/broken symlinks under all configured `link_targets`, then explicitly remove them:
+
+```sh
+orbit link clean
+orbit link clean --yes
+orbit link
+```
+
+Cleanup includes Orbit's own links and foreign links, regardless of dependency `link` switches. It removes links only, preserving target assets, real directories, regular files, links to regular files, and nested links inside real directories. It does not recurse or follow symlinked roots; unsafe roots and roots overlapping asset storage are rejected. `--name` and `--label` are unsupported. Afterwards, `orbit link` recreates enabled Orbit links.
+
 ## Publish to GitHub
 
 The `orbit_repo` section specifies your personal remote and local asset directory. Ensure the remote exists and your Git credentials work:
@@ -287,14 +332,14 @@ Add `--repo "$HOME/.orbit/repo"` to either command to compare the local reposito
 
 ## Releases and binary installation
 
-Download stable packages from [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases). This README targets **v2.0.0**. See the migration note below before upgrading from v1.x. Review candidates are also available from successful [Stable release checks runs](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml); candidate artifacts are published only after approval and verification of the merged commit.
+Download stable packages from [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases). This README targets **v2.1.0**. See the migration note below before upgrading from v1.x. Review candidates are also available from successful [Stable release checks runs](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml); candidate artifacts are published only after approval and verification of the merged commit.
 
 | Platform | Archive |
 | --- | --- |
-| macOS Apple Silicon | `orbit_2.0.0_darwin_arm64.tar.gz` |
-| macOS Intel | `orbit_2.0.0_darwin_amd64.tar.gz` |
-| Linux amd64 | `orbit_2.0.0_linux_amd64.tar.gz` |
-| Windows amd64 | `orbit_2.0.0_windows_amd64.zip` |
+| macOS Apple Silicon | `orbit_2.1.0_darwin_arm64.tar.gz` |
+| macOS Intel | `orbit_2.1.0_darwin_amd64.tar.gz` |
+| Linux amd64 | `orbit_2.1.0_linux_amd64.tar.gz` |
+| Windows amd64 | `orbit_2.1.0_windows_amd64.zip` |
 
 Check `CANDIDATE.json` for the source SHA, toolchain, native runner and build parameters. Verify your archive against `SHA256SUMS` before extraction. On macOS use `shasum -a 256 <archive>`; Linux: `sha256sum <archive>`; PowerShell: `Get-FileHash <archive> -Algorithm SHA256`. Compare the complete hash with the matching filename's entry.
 
@@ -333,6 +378,61 @@ Updates follow the latest **stable** GitHub Release for your operating system an
 
 If no stable Release is available, update checks report that explicitly. CI candidate artifacts are not selected by the updater. Download, checksum or extraction failures preserve the installed program. Installation uses a temporary file beside the actual executable and requires write permission to that directory; no privilege elevation is attempted. If Windows keeps the old running program locked, Orbit reports the retained backup path for removal after the old process exits. SHA256 verifies integrity; the packages remain unsigned.
 
+## Troubleshooting and moving to another machine
+
+### Ubuntu: brew command not found
+
+Ubuntu does not include Homebrew by default. Install its prerequisites and run the [official installer](https://brew.sh):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential procps curl file git
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+Follow the installer's next steps. For the standard Linux location with Bash, make Brew available now and in future terminals:
+
+```bash
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.bashrc
+brew --version
+brew install HuangChenning/tap/orbit
+```
+
+If Homebrew is already installed at that location, only the PATH setup is needed. Use `~/.zshrc` instead of `~/.bashrc` for Zsh; add the startup line once. See [Homebrew on Linux](https://docs.brew.sh/Homebrew-on-Linux). Orbit's Linux package supports x86_64/amd64; Linux ARM64 is not currently available.
+
+### Homebrew: refusing to write insecure trust store
+
+If installation reports that `~/.homebrew` is “group or world writable”, restrict that directory and any existing trust file, then retry:
+
+```bash
+chmod 700 "$HOME/.homebrew"
+if [ -f "$HOME/.homebrew/trust.json" ]; then
+  chmod 600 "$HOME/.homebrew/trust.json"
+fi
+brew install HuangChenning/tap/orbit
+```
+
+These paths apply to the reported `~/.homebrew` location; if the error names another trust-store location, use that path instead. If `chmod` fails, inspect `ls -ld "$HOME/.homebrew"` and resolve ownership with the system administrator. Do not run Brew with `sudo`. A fully qualified installation trusts the named formula automatically; see [Homebrew tap trust](https://docs.brew.sh/Tap-Trust).
+
+An `orbit: command not found` error after a failed Brew installation means the executable is not yet available. Once installation succeeds, run `orbit --version` and `orbit init`. If the executable still cannot be found, check `command -v brew` and `"$(brew --prefix orbit)/bin/orbit" --version`, then correct PATH.
+
+### Configure the personal repository on a new machine
+
+Run `orbit init`, configure `orbit_repo` and this machine's `link_targets`, then follow [Restore on another device](#restore-on-another-device). Only personal-repository access is required; no upstream declarations or caches are needed.
+
+To reuse additional preferences, optionally transfer the old `~/.orbit/orbit.yaml` and adjacent `.orbitignore`. Review destination files before replacing them, adjust absolute paths and keep relevant tool paths only. `~` resolves to the current user's home, such as `/home/ubuntu`. `pull` refreshes asset registrations; it does not copy another machine's link targets, labels or exclusion rules.
+
+With the configuration reviewed, run:
+
+```sh
+orbit pull
+orbit link
+orbit check
+```
+
+Use `orbit vendor sync` only to intentionally refresh declared upstream sources. Use `orbit sync` separately to commit and push local managed asset changes.
+
 ## Development checks
 
 With Go, Python 3.12 and Git installed:
@@ -346,7 +446,7 @@ python3 -m unittest discover -s tests/acceptance -v
 python3 -m unittest discover -s tests -p test_synthetic_config.py -v
 ```
 
-On Windows build `orbit.exe` instead. Set `ORBIT_BIN` to test another binary. CI tests the actual extracted candidate on Go 1.27.3 and a development binary on Go 1.26.10. Fixtures use temporary local repositories and synthetic assets; no personal Axon inventory is required. Candidate builders run `python3 tools/release.py build --version v2.0.0` from a clean committed checkout using native Go 1.27.3; this creates files under `dist/` and never publishes a release.
+On Windows build `orbit.exe` instead. Set `ORBIT_BIN` to test another binary. CI tests the actual extracted candidate on Go 1.27.3 and a development binary on Go 1.26.10. Fixtures use temporary local repositories and synthetic assets; no personal Axon inventory is required. Candidate builders run `python3 tools/release.py build --version v2.1.0` from a clean committed checkout using native Go 1.27.3; this creates files under `dist/` and never publishes a release.
 
 ## Limitations and behavior
 

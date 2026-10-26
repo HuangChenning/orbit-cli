@@ -9,6 +9,7 @@ import stat
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import shutil
 import time
@@ -134,6 +135,338 @@ class OrbitCLIFixture(unittest.TestCase):
 
 
 class OrbitCLIContracts(OrbitCLIFixture):
+    def test_pull_restores_and_registers_new_device_without_upstream_or_cache(self):
+        self.orbit("vendor", "sync")
+        self.orbit("sync")
+        original_path = self.path
+        original_config = self.config
+        self.upstream.rename(self.root / "offline-upstream")
+        self.path = self.root / "device-b.yaml"
+        self.config = dict(version="1.0", global_cache=str(self.root / "cache-b"),
+                           orbit_repo=dict(remote=str(self.remote), branch="main",
+                                           local_path=str(self.root / "device-b")),
+                           link_targets={"skills": [str(self.root / "tools-b/skills")]},
+                           dependencies=[])
+        self.save()
+        self.path.write_text("# device B settings\n" + self.path.read_text())
+        result = self.orbit("pull")
+        self.assertIn("registered", result.stdout)
+        registered = yaml.safe_load(self.path.read_text())
+        self.assertIn("# device B settings", self.path.read_text())
+        self.assertEqual(len(registered["dependencies"]), 4)
+        skill = next(d for d in registered["dependencies"] if d["name"] == "skills")
+        self.assertFalse(skill["vendor"])
+        self.assertTrue(skill["link"])
+        self.assertIn("ref", skill)
+        self.assertNotIn("version", skill)
+        self.assertFalse((self.root / "cache-b").exists())
+        self.orbit("link")
+        self.orbit("check")
+        asset = self.root / "device-b/skills/SKILL.md"
+        self.assertEqual(asset.read_bytes(), b"alpha-v1\n")
+        self.assertEqual((self.root / "tools-b/skills").resolve(), asset.parent.resolve())
+        asset.write_text("edited on device B\n")
+        self.orbit("sync")
+        self.path, self.config = original_path, original_config
+        self.orbit("pull")
+        self.assertEqual((self.root / "mirror/skills/SKILL.md").read_text(), "edited on device B\n")
+        self.assertTrue(yaml.safe_load(self.path.read_text())["dependencies"][0].get("vendor", True))
+
+    def test_link_clean_previews_axon_and_broken_links_preserving_real_and_file_entries(self):
+        tools = self.root / "tools/skills"
+        tools.mkdir(parents=True)
+        source = self.root / "axon-skills"
+        source.mkdir()
+        (source / "SKILL.md").write_text("original asset\n")
+        (tools / "axon").symlink_to(source, target_is_directory=True)
+        (tools / "broken").symlink_to(self.root / "missing-skill", target_is_directory=True)
+        (tools / "real").mkdir()
+        (tools / "real/nested").symlink_to(source, target_is_directory=True)
+        (tools / "file.md").write_text("keep\n")
+        (tools / "file-link").symlink_to(tools / "file.md")
+        self.config["link_targets"] = {"skills": [str(tools)]}
+        self.config["dependencies"] = []
+        self.save()
+        before = self.path.read_bytes()
+        preview = self.orbit("link", "clean")
+        self.assertIn("preview", preview.stdout)
+        self.assertTrue((tools / "axon").is_symlink())
+        self.assertTrue((tools / "broken").is_symlink())
+        result = self.orbit("link", "clean", "--yes")
+        self.assertIn("removed=2", result.stdout)
+        self.assertFalse((tools / "axon").is_symlink())
+        self.assertFalse((tools / "broken").is_symlink())
+        self.assertTrue((tools / "real/nested").is_symlink())
+        self.assertTrue((tools / "file-link").is_symlink())
+        self.assertEqual((source / "SKILL.md").read_text(), "original asset\n")
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_pull_checks_config_conflicts_before_install_and_preserves_local_controls(self):
+        self.orbit("vendor", "sync")
+        self.orbit("sync")
+        self.config["orbit_repo"]["local_path"] = str(self.root / "receiver")
+        existing = self.config["dependencies"][0]
+        existing.update(source=str(self.root / "different-source"), vendor=True,
+                        link=False, labels=["local-choice"])
+        self.config["dependencies"] = [existing]
+        self.save()
+        self.path.write_text("# keep local settings\n" + self.path.read_text())
+        before = self.path.read_bytes()
+        result = self.orbit("pull", success=False)
+        self.assertIn("configuration conflict", result.stderr)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertFalse((self.root / "receiver").exists())
+        self.orbit("pull", "--update-config")
+        registered = yaml.safe_load(self.path.read_text())["dependencies"]
+        skill = next(d for d in registered if d["name"] == "skills")
+        self.assertEqual(pathlib.Path(skill["source"]).resolve(), self.upstream.resolve())
+        self.assertTrue(skill["vendor"])
+        self.assertFalse(skill["link"])
+        self.assertEqual(skill["labels"], ["local-choice"])
+        self.assertNotIn("version", skill)
+        self.assertIn("# keep local settings", self.path.read_text())
+        self.assertEqual(len(registered), 4)
+        before = self.path.read_bytes()
+        self.assertIn("unchanged", self.orbit("pull").stdout)
+        self.assertEqual(self.path.read_bytes(), before, "unchanged pull must not reformat configuration")
+
+    def test_pull_blocks_dirty_staged_untracked_and_ignored_local_work(self):
+        self.orbit("vendor", "sync")
+        self.orbit("sync")
+        repo = self.root / "mirror"
+        before = self.path.read_bytes()
+        asset = repo / "skills/SKILL.md"
+        original = asset.read_bytes()
+        for staged in (False, True):
+            asset.write_text("pending edit\n")
+            if staged:
+                self.git(repo, "add", "skills/SKILL.md")
+            self.orbit("pull", success=False)
+            self.assertEqual(asset.read_text(), "pending edit\n")
+            if staged:
+                self.git(repo, "reset", "HEAD", "--", "skills/SKILL.md")
+            asset.write_bytes(original)
+        self.git(repo, "config", "core.excludesFile", str(self.root / "ignore-rules"))
+        (self.root / "ignore-rules").write_text("ignored.tmp\n")
+        for name in ("notes.txt", "ignored.tmp"):
+            path = repo / name
+            path.write_text("keep local file\n")
+            self.orbit("pull", success=False)
+            self.assertEqual(path.read_text(), "keep local file\n")
+            path.unlink()
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_pull_rejects_local_ahead_and_diverged_histories_without_reset(self):
+        self.orbit("vendor", "sync")
+        self.orbit("sync")
+        repo = self.root / "mirror"
+        (repo / "skills/SKILL.md").write_text("local commit\n")
+        self.git(repo, "add", ".")
+        self.git(repo, "commit", "-m", "local-only work")
+        local_head = self.git(repo, "rev-parse", "HEAD")
+        self.assertIn("fast-forward", self.orbit("pull", success=False).stderr)
+        other = self.root / "other-device"
+        self.git(self.root, "clone", str(self.remote), str(other))
+        (other / "commands/build.md").write_text("remote device edit\n")
+        self.git(other, "add", ".")
+        self.git(other, "commit", "-m", "remote work")
+        self.git(other, "push", "origin", "main")
+        self.assertIn("fast-forward", self.orbit("pull", success=False).stderr)
+        self.assertEqual(self.git(repo, "rev-parse", "HEAD"), local_head)
+        self.assertEqual((repo / "skills/SKILL.md").read_text(), "local commit\n")
+
+    def test_pull_invalid_manifest_does_not_install_or_rewrite_configuration(self):
+        self.orbit("vendor", "sync")
+        self.orbit("sync")
+        repo = self.root / "mirror"
+        manifest_path = repo / ".orbit-manifest.yaml"
+        valid_manifest = yaml.safe_load(manifest_path.read_text())
+        before_receiver = self.root / "receiver"
+        self.config["orbit_repo"]["local_path"] = str(before_receiver)
+        self.config["dependencies"] = []
+        self.save()
+        before_config = self.path.read_bytes()
+        for bad in ("missing", "escape", "duplicate", "incomplete", "missing-directory", "missing-version"):
+            with self.subTest(manifest=bad):
+                manifest = yaml.safe_load(yaml.safe_dump(valid_manifest))
+                if bad == "missing":
+                    manifest_path.unlink()
+                else:
+                    if bad == "escape":
+                        manifest["dependencies"][0]["mirror_dir"] = "../escape"
+                    elif bad == "duplicate":
+                        manifest["dependencies"][1]["name"] = manifest["dependencies"][0]["name"]
+                    elif bad == "incomplete":
+                        manifest["dependencies"][0]["commit"] = ""
+                    elif bad == "missing-version":
+                        manifest.pop("version")
+                    else:
+                        manifest["dependencies"][0]["mirror_dir"] = "not-present"
+                    manifest_path.write_text(yaml.safe_dump(manifest))
+                self.git(repo, "add", "-A")
+                self.git(repo, "commit", "-m", bad)
+                self.git(repo, "push", "origin", "main")
+                self.orbit("pull", success=False)
+                self.assertFalse(before_receiver.exists())
+                self.assertEqual(self.path.read_bytes(), before_config)
+                self.assertEqual(list(self.root.glob(".orbit-pull-*")), [])
+                manifest_path.write_text(yaml.safe_dump(valid_manifest))
+
+    def test_link_clean_refuses_symlinked_or_storage_roots_before_removing_links(self):
+        tools = self.root / "a-tools"
+        tools.mkdir()
+        outside = self.root / "outside"
+        outside.mkdir()
+        (tools / "keep").symlink_to(outside, target_is_directory=True)
+        alias = self.root / "z-alias"
+        alias.symlink_to(outside, target_is_directory=True)
+        self.config["dependencies"] = []
+        for root in (alias, self.root / "cache", self.root):
+            self.config["link_targets"] = {"skills": [str(tools), str(root)]}
+            self.save()
+            self.orbit("link", "clean", "--yes", success=False)
+            self.assertTrue((tools / "keep").is_symlink())
+
+    def test_pull_rejects_colliding_registration_selectors_and_missing_branch(self):
+        self.orbit("vendor", "sync")
+        self.orbit("sync")
+        self.config["orbit_repo"]["local_path"] = str(self.root / "receiver")
+        extra = dict(self.config["dependencies"][0], name="local-only", link=False)
+        self.config["dependencies"] = [extra]
+        self.save()
+        before = self.path.read_bytes()
+        result = self.orbit("pull", "--update-config", success=False)
+        self.assertIn("overlap", result.stderr)
+        self.assertFalse((self.root / "receiver").exists())
+        self.assertEqual(self.path.read_bytes(), before)
+        for command in (("pull", "--name", "skills"), ("pull", "--label", "skills"),
+                        ("link", "clean", "--name", "skills")):
+            self.assertIn("not supported", self.orbit(*command, success=False).stderr)
+        self.config["dependencies"] = []
+        self.config["orbit_repo"]["branch"] = "absent"
+        self.save()
+        self.orbit("pull", success=False)
+        self.assertFalse((self.root / "receiver").exists())
+
+    def test_pull_existing_invalid_snapshot_preserves_checkout_and_configuration(self):
+        self.orbit("vendor", "sync")
+        self.orbit("sync")
+        repo = self.root / "mirror"
+        head = self.git(repo, "rev-parse", "HEAD")
+        before = self.path.read_bytes()
+        other = self.root / "other-device"
+        self.git(self.root, "clone", str(self.remote), str(other))
+        (self.root / "outside-secret").write_text("preserve outside data\n")
+        (other / "skills/escape").symlink_to("../../outside-secret")
+        self.git(other, "add", ".")
+        self.git(other, "commit", "-m", "unsafe asset symlink")
+        self.git(other, "push", "origin", "main")
+        result = self.orbit("pull", success=False)
+        self.assertIn("symlink escapes", result.stderr)
+        self.assertEqual(self.git(repo, "rev-parse", "HEAD"), head)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertFalse((repo / "skills/escape").is_symlink())
+
+    def test_pull_refuses_wrong_remote_or_branch_without_altering_local_files(self):
+        self.orbit("vendor", "sync")
+        self.orbit("sync")
+        repo = self.root / "mirror"
+        head = self.git(repo, "rev-parse", "HEAD")
+        self.config["orbit_repo"]["remote"] = str(self.root / "another.git")
+        self.save()
+        self.assertIn("remote mismatch", self.orbit("pull", success=False).stderr)
+        self.config["orbit_repo"]["remote"] = str(self.remote)
+        self.config["orbit_repo"]["branch"] = "other-branch"
+        self.save()
+        self.assertIn("branch mismatch", self.orbit("pull", success=False).stderr)
+        self.assertEqual(self.git(repo, "rev-parse", "HEAD"), head)
+
+    def test_pull_keeps_unrelated_local_declarations_when_registering_new_assets(self):
+        self.orbit("vendor", "sync")
+        self.orbit("sync")
+        self.config["orbit_repo"]["local_path"] = str(self.root / "receiver")
+        extra = dict(name="future-local", source=str(self.upstream), ref="main",
+                     mirror_dir="skills/future", vendor=False, link=False, labels=["future"])
+        # Avoid overlapping the fixture's collection-root `skills` declaration.
+        extra["mirror_dir"] = "future-assets/example"
+        self.config["dependencies"] = [extra]
+        self.save()
+        self.orbit("pull")
+        registered = yaml.safe_load(self.path.read_text())["dependencies"]
+        self.assertEqual(registered[0], extra)
+        self.assertEqual(len(registered), 5)
+
+    def test_pull_rejects_anchored_identity_updates_without_changing_unrelated_declarations(self):
+        self.orbit("vendor", "sync")
+        self.orbit("sync")
+        self.config["orbit_repo"]["local_path"] = str(self.root / "receiver")
+        existing = dict(self.config["dependencies"][0], source="placeholder-source", link=False)
+        existing["ref"] = existing.pop("version")
+        extra = dict(existing, name="unrelated", mirror_dir="other-assets/example")
+        self.config["dependencies"] = [existing, extra]
+        self.save()
+        text = self.path.read_text()
+        scalar_anchor = text.replace("source: placeholder-source", "source: &local_source /fixture/local-original", 1)
+        scalar_anchor = scalar_anchor.replace("source: placeholder-source", "source: *local_source", 1)
+        mapping_anchor = text.replace("- name: skills", "- &local_asset\n  name: skills", 1)
+        mapping_anchor = mapping_anchor.replace("- name: unrelated", "- <<: *local_asset\n  name: unrelated", 1)
+        # The second mapping inherits source from the first anchored dependency.
+        position = mapping_anchor.index("- <<: *local_asset")
+        mapping_anchor = mapping_anchor[:position] + mapping_anchor[position:].replace("  source: placeholder-source\n", "", 1)
+        for anchored in (scalar_anchor, mapping_anchor):
+            with self.subTest(anchored=anchored):
+                self.path.write_text(anchored)
+                before = self.path.read_bytes()
+                result = self.orbit("pull", "--update-config", success=False)
+                self.assertIn("anchor", result.stderr)
+                self.assertEqual(self.path.read_bytes(), before)
+                self.assertFalse((self.root / "receiver").exists())
+
+    def test_pull_preflights_local_checkout_filters_before_advancing_head(self):
+        self.orbit("vendor", "sync")
+        self.orbit("sync")
+        repo = self.root / "mirror"
+        head = self.git(repo, "rev-parse", "HEAD")
+        before = self.path.read_bytes()
+        filter_path = self.root / "transform.py"
+        filter_path.write_text("import sys\nsys.stdout.buffer.write(sys.stdin.buffer.read().replace(b'remote', b'TRANSFORMED'))\n")
+        command = '"' + pathlib.Path(sys.executable).as_posix() + '" "' + filter_path.as_posix() + '"'
+        self.git(repo, "config", "filter.orbit-test.smudge", command)
+        (repo / ".git/info/attributes").write_text("skills/SKILL.md filter=orbit-test\n")
+        other = self.root / "other-device"
+        self.git(self.root, "clone", str(self.remote), str(other))
+        (other / "skills/SKILL.md").write_text("remote replacement\n")
+        self.git(other, "add", ".")
+        self.git(other, "commit", "-m", "remote replacement")
+        self.git(other, "push", "origin", "main")
+        self.orbit("pull", success=False)
+        self.assertEqual(self.git(repo, "rev-parse", "HEAD"), head)
+        self.assertEqual((repo / "skills/SKILL.md").read_bytes(), b"alpha-v1\n")
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_link_clean_checks_native_storage_identity_including_case_aliases(self):
+        protected = self.root / "Protected"
+        protected.mkdir()
+        source = self.root / "asset-source"
+        source.mkdir()
+        (protected / "keep").symlink_to(source, target_is_directory=True)
+        alias = self.root / "protected"
+        self.config["dependencies"] = []
+        self.config["global_cache"] = str(protected)
+        if alias.exists() and os.path.samefile(alias, protected):
+            self.config["link_targets"] = {"skills": [str(alias)]}
+            self.save()
+            self.orbit("link", "clean", "--yes", success=False)
+            self.assertTrue((protected / "keep").is_symlink())
+        else:
+            alias.mkdir()
+            (alias / "foreign").symlink_to(source, target_is_directory=True)
+            self.config["link_targets"] = {"skills": [str(alias)]}
+            self.save()
+            self.orbit("link", "clean", "--yes")
+            self.assertFalse((alias / "foreign").is_symlink())
+            self.assertTrue((protected / "keep").is_symlink())
+
     def test_ref_migration_reuses_installed_assets_and_cache(self):
         self.sync_link()
         states = sorted((self.root / "cache/.state").glob("*.json"))
@@ -1213,6 +1546,42 @@ class GitSubprocessContracts(OrbitCLIFixture):
                 process.communicate(timeout=30)
         self.env.pop("ORBIT_TEST_GIT_MODE")
         self.orbit("vendor", "sync")
+
+    def test_pull_releases_failed_clone_and_preserves_concurrent_config_edits(self):
+        self.orbit("vendor", "sync")
+        self.orbit("sync")
+        self.config["orbit_repo"]["local_path"] = str(self.root / "receiver")
+        self.config["dependencies"] = []
+        self.save()
+        marker = self.root / "pull-marker"
+        self.install_git_shim("fail-clone", marker)
+        self.orbit("pull", success=False)
+        self.assertFalse((self.root / "receiver").exists())
+        self.assertEqual(list(self.root.glob(".orbit-pull-*")), [])
+        self.env.pop("ORBIT_TEST_GIT_MODE")
+        self.orbit("pull")
+        self.env["ORBIT_TEST_GIT_MODE"] = "pause-fetch"
+        command = [str(self.binary), "--config", str(self.path), "pull"]
+        process = subprocess.Popen(command, cwd=self.root, env=self.env,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            ready = pathlib.Path(str(marker) + ".started")
+            deadline = time.monotonic() + 10
+            while not ready.exists() and process.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertTrue(ready.exists(), "fetch must pause with locks held")
+            self.assertIn("another Orbit process", self.orbit("pull", success=False).stderr)
+            modified = "# concurrent user edit\n" + self.path.read_text()
+            self.path.write_text(modified)
+            pathlib.Path(str(marker) + ".release").write_text("release\n")
+            out, err = process.communicate(timeout=20)
+            self.assertNotEqual(process.returncode, 0, out + err)
+            self.assertIn("configuration changed", err)
+            self.assertEqual(self.path.read_text(), modified)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=20)
 
     def test_failed_personal_clone_leaves_no_checkout_and_retry_succeeds(self):
         self.install_git_shim("fail-clone")
