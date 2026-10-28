@@ -44,10 +44,16 @@ func (e *Engine) git(ctx context.Context, dir string, args ...string) (string, e
 	defer cancel()
 	base := []string{"--literal-pathspecs", "-c", "core.autocrlf=false", "-c", "core.symlinks=true", "-C", dir}
 	cmd := exec.CommandContext(ctx, "git", append(base, args...)...)
-	configureProcess(cmd)
+	terminate := configureProcess(cmd)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_LFS_SKIP_SMUDGE=1")
 	cmd.WaitDelay = time.Second
 	b, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		terminate()
+		if err != nil {
+			err = errors.Join(ctx.Err(), err)
+		}
+	}
 	if err != nil {
 		return "", fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(string(b)))
 	}
@@ -239,6 +245,14 @@ func (e *Engine) syncOne(ctx context.Context, d config.Dependency) error {
 		return serr
 	}
 	if err = e.verifyRepository(ctx, d); err != nil {
+		return err
+	}
+	// Git locks contain no owner PID. Preserve unknown locks, including those
+	// left by older Orbit versions, rather than racing a live Git operation.
+	gitLock := filepath.Join(p, ".git", "shallow.lock")
+	if _, err := os.Lstat(gitLock); err == nil {
+		return fmt.Errorf("Git lock exists at %s; stop other Git/Orbit operations and remove this file only after confirming it is stale, then rerun orbit vendor sync", gitLock)
+	} else if !os.IsNotExist(err) {
 		return err
 	}
 	v := d.Ref
