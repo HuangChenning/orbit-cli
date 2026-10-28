@@ -5,7 +5,7 @@ import (
 	"strconv"
 )
 
-func configureProcess(cmd *exec.Cmd) {
+func configureProcess(cmd *exec.Cmd) func() {
 	cmd.Cancel = func() error {
 		// taskkill terminates Git's SSH/credential children as well as Git itself.
 		if err := exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(cmd.Process.Pid)).Run(); err != nil {
@@ -13,4 +13,5 @@ func configureProcess(cmd *exec.Cmd) {
 		}
 		return nil
 	}
+	return func() {}
 }
