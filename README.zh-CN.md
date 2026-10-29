@@ -332,14 +332,14 @@ orbit check --axon-config "$HOME/.axon/axon.yaml" \
 
 ## 版本发布与二进制安装
 
-从 [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases) 下载稳定版安装包，本文档对应 **v2.1.0**；从 v1.x 升级前请阅读下方迁移说明。成功的 [Stable release checks 工作流](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml) 也提供供审核的候选产物；候选产物经批准且验证合并后的提交后才正式发布。
+从 [GitHub Releases](https://github.com/HuangChenning/orbit-cli/releases) 下载稳定版安装包，本文档对应 **v2.1.1**；从 v1.x 升级前请阅读下方迁移说明。成功的 [Stable release checks 工作流](https://github.com/HuangChenning/orbit-cli/actions/workflows/ci.yml) 也提供供审核的候选产物；候选产物经批准且验证合并后的提交后才正式发布。
 
 | 平台 | 压缩包 |
 | --- | --- |
-| macOS Apple Silicon | `orbit_2.1.0_darwin_arm64.tar.gz` |
-| macOS Intel | `orbit_2.1.0_darwin_amd64.tar.gz` |
-| Linux amd64 | `orbit_2.1.0_linux_amd64.tar.gz` |
-| Windows amd64 | `orbit_2.1.0_windows_amd64.zip` |
+| macOS Apple Silicon | `orbit_2.1.1_darwin_arm64.tar.gz` |
+| macOS Intel | `orbit_2.1.1_darwin_amd64.tar.gz` |
+| Linux amd64 | `orbit_2.1.1_linux_amd64.tar.gz` |
+| Windows amd64 | `orbit_2.1.1_windows_amd64.zip` |
 
 `CANDIDATE.json` 记录源码 SHA、工具链、原生运行环境及构建参数。解压前对照 `SHA256SUMS` 校验压缩包：macOS 使用 `shasum -a 256 <压缩包>`，Linux 使用 `sha256sum <压缩包>`，PowerShell 使用 `Get-FileHash <压缩包> -Algorithm SHA256`，将完整哈希与对应文件名的条目比较。
 
@@ -446,7 +446,7 @@ python3 -m unittest discover -s tests/acceptance -v
 python3 -m unittest discover -s tests -p test_synthetic_config.py -v
 ```
 
-Windows 构建文件名使用 `orbit.exe`。通过 `ORBIT_BIN` 可指定其他程序；CI 在 Go 1.27.3 中测试实际解压的候选程序，在 Go 1.26.10 中测试开发构建。测试仅使用临时本地仓库及合成资产，不依赖个人 Axon 清单。构建候选包时，在干净且已提交的源码目录中使用原生 Go 1.27.3 运行 `python3 tools/release.py build --version v2.1.0`，产物位于 `dist/`，不会发布版本。
+Windows 构建文件名使用 `orbit.exe`。通过 `ORBIT_BIN` 可指定其他程序；CI 在 Go 1.27.3 中测试实际解压的候选程序，在 Go 1.26.10 中测试开发构建。测试仅使用临时本地仓库及合成资产，不依赖个人 Axon 清单。构建候选包时，在干净且已提交的源码目录中使用原生 Go 1.27.3 运行 `python3 tools/release.py build --version v2.1.1`，产物位于 `dist/`，不会发布版本。
 
 ## 限制与行为边界
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.1.1 — 2026-10-29
+
+- Let Git clean up cache locks on Unix when an operation times out or is canceled, then forcibly terminate any remaining child processes. Interrupted shallow fetches can be retried without leaving `shallow.lock` behind during graceful termination.
+- Preserve timeout and cancellation causes in Git errors. Existing locks with unknown ownership are retained and reported with safe recovery instructions rather than deleted automatically.
+
 ## v2.1.0 — 2026-10-26
 
 - Restore assets from the personal repository with `orbit pull`, without upstream dependencies or caches, and register them in the local YAML. Validate incoming assets and configuration before installation; update existing repositories only by fast-forward and preserve dirty worktrees and unpublished commits.
