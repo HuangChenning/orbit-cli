@@ -529,7 +529,7 @@ class OrbitCLIContracts(OrbitCLIFixture):
                     for value in values:
                         args.extend((flag, value))
                     result = self.orbit(*args)
-                    self.assertIn("assembled 2 dependencies", result.stdout)
+                    self.assertIn("2 mirrored into", result.stdout)
                     self.assertEqual((self.root / "mirror/skills/SKILL.md").read_text(), "alpha-v1\n")
                     self.assertEqual((self.root / "mirror/scripts/run.sh").read_text(), "keep unselected\n")
         self.orbit("link", "--name", "skills")

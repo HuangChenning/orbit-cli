@@ -3,6 +3,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -23,6 +24,87 @@ func localGit(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %v: %v: %s", args, err, b)
 	}
 	return strings.TrimSpace(string(b))
+}
+
+func TestSyncReportsAddedUpdatedAndUnchangedUpstream(t *testing.T) {
+	upstream := t.TempDir()
+	localGit(t, upstream, "init", "-b", "main")
+	localGit(t, upstream, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "initial fixture")
+	first := localGit(t, upstream, "rev-parse", "HEAD")
+	d := config.Dependency{Name: "fixture", Source: upstream, Ref: "main"}
+	var out bytes.Buffer
+	e := &Engine{Config: &config.Config{GlobalCache: t.TempDir()}, Out: &out}
+
+	if err := e.Sync(context.Background(), []config.Dependency{d}); err != nil {
+		t.Fatal(err)
+	}
+	if want := "✓  [fixture] added " + first[:7] + " initial fixture\n"; out.String() != want {
+		t.Fatalf("first sync output:\nwant %q\ngot  %q", want, out.String())
+	}
+
+	out.Reset()
+	if err := e.Sync(context.Background(), []config.Dependency{d}); err != nil {
+		t.Fatal(err)
+	}
+	if want := "✓  [fixture] unchanged " + first[:7] + " initial fixture\n"; out.String() != want {
+		t.Fatalf("unchanged sync output:\nwant %q\ngot  %q", want, out.String())
+	}
+
+	localGit(t, upstream, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "updated fixture")
+	second := localGit(t, upstream, "rev-parse", "HEAD")
+	out.Reset()
+	if err := e.Sync(context.Background(), []config.Dependency{d}); err != nil {
+		t.Fatal(err)
+	}
+	want := "✓  [fixture] updated " + first[:7] + ".." + second[:7] + " updated fixture\n"
+	if out.String() != want {
+		t.Fatalf("updated sync output:\nwant %q\ngot  %q", want, out.String())
+	}
+}
+
+func TestAssembleReportsEachMirroredAssetAndTotal(t *testing.T) {
+	root := t.TempDir()
+	upstream := filepath.Join(root, "upstream")
+	if err := os.Mkdir(upstream, 0700); err != nil {
+		t.Fatal(err)
+	}
+	localGit(t, upstream, "init", "-b", "main")
+	if err := os.MkdirAll(filepath.Join(upstream, "skills", "pdf"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(upstream, "skills", "pdf", "SKILL.md"), []byte("pdf skill\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	localGit(t, upstream, "add", ".")
+	localGit(t, upstream, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "add pdf skill")
+
+	remote := filepath.Join(root, "personal.git")
+	if err := os.Mkdir(remote, 0700); err != nil {
+		t.Fatal(err)
+	}
+	localGit(t, remote, "init", "--bare", "-b", "main")
+	d := config.Dependency{Name: "pdf", Source: upstream, Ref: "main", Subdir: "skills/pdf", MirrorDir: "skills/pdf"}
+	var out bytes.Buffer
+	e := &Engine{
+		Config: &config.Config{
+			Path:        filepath.Join(root, "orbit.yaml"),
+			GlobalCache: filepath.Join(root, "cache"),
+			OrbitRepo:   &config.Repository{Remote: remote, Branch: "main", LocalPath: filepath.Join(root, "repo")},
+		},
+		Out: &out,
+	}
+	if err := e.Sync(context.Background(), []config.Dependency{d}); err != nil {
+		t.Fatal(err)
+	}
+
+	out.Reset()
+	if err := e.Assemble(context.Background(), []config.Dependency{d}, true); err != nil {
+		t.Fatal(err)
+	}
+	want := "✓  [pdf] mirrored skills/pdf@main → skills/pdf\n1 mirrored into " + e.Config.OrbitRepo.LocalPath + "\n"
+	if out.String() != want {
+		t.Fatalf("assemble output:\nwant %q\ngot  %q", want, out.String())
+	}
 }
 
 func TestInterruptedFetchCanSyncAgain(t *testing.T) {
@@ -101,7 +183,7 @@ func interruptedFetchCanSyncAgain(t *testing.T, reason string) {
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("interrupted Git command must preserve %v: %v", wantErr, err)
 	}
-	if err := e.syncOne(context.Background(), d); err != nil {
+	if _, err := e.syncOne(context.Background(), d); err != nil {
 		t.Fatalf("sync after interruption: %v", err)
 	}
 	_, got, err := e.ready(context.Background(), d)
@@ -146,7 +228,7 @@ func TestSyncPreservesUnknownGitLockAndExplainsRecovery(t *testing.T) {
 	if err := os.WriteFile(lock, []byte(contents), 0600); err != nil {
 		t.Fatal(err)
 	}
-	err := e.syncOne(context.Background(), d)
+	_, err := e.syncOne(context.Background(), d)
 	if err == nil || !strings.Contains(err.Error(), lock) || !strings.Contains(err.Error(), "confirming it is stale") {
 		t.Fatalf("an unknown Git lock must stop sync and explain safe recovery: %v", err)
 	}

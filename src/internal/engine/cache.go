@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/HuangChenning/orbit-cli/v2/src/internal/config"
 	"github.com/gofrs/flock"
@@ -209,51 +210,60 @@ func (e *Engine) ready(ctx context.Context, d config.Dependency) (string, state,
 
 var fullSHA = regexp.MustCompile(`^[0-9a-fA-F]{40}$`)
 
-func (e *Engine) syncOne(ctx context.Context, d config.Dependency) error {
+type syncResult struct {
+	Name     string
+	Previous string
+	Commit   string
+	Subject  string
+}
+
+func (e *Engine) syncOne(ctx context.Context, d config.Dependency) (syncResult, error) {
+	result := syncResult{Name: d.Name}
 	l, err := e.lock(d, true)
 	if err != nil {
-		return err
+		return result, err
 	}
 	defer l.Unlock()
 	p := e.cache(d)
 	if err = config.NoSymlinks(p); err != nil {
-		return err
+		return result, err
 	}
 	s, serr := e.readState(d)
+	result.Previous = s.Commit
 	if _, err = os.Lstat(p); os.IsNotExist(err) {
 		s = state{Source: d.Source, Version: d.Ref}
 		temporary, err := os.MkdirTemp(e.Config.GlobalCache, ".init-")
 		if err != nil {
-			return err
+			return result, err
 		}
 		defer os.RemoveAll(temporary)
 		if _, err = e.git(ctx, temporary, "init"); err != nil {
-			return err
+			return result, err
 		}
 		if _, err = e.git(ctx, temporary, "remote", "add", "origin", d.Source); err != nil {
-			return err
+			return result, err
 		}
 		if err = e.writeState(d, s); err != nil {
-			return err
+			return result, err
 		}
 		if err = os.Rename(temporary, p); err != nil {
-			return err
+			return result, err
 		}
 	} else if err != nil {
-		return err
+		return result, err
 	} else if serr != nil {
-		return serr
+		return result, serr
 	}
 	if err = e.verifyRepository(ctx, d); err != nil {
-		return err
+		return result, err
 	}
 	// Git locks contain no owner PID. Preserve unknown locks, including those
 	// left by older Orbit versions, rather than racing a live Git operation.
 	gitLock := filepath.Join(p, ".git", "shallow.lock")
 	if _, err := os.Lstat(gitLock); err == nil {
-		return fmt.Errorf("Git lock exists at %s; stop other Git/Orbit operations and remove this file only after confirming it is stale, then rerun orbit vendor sync", gitLock)
+		return result, fmt.Errorf("Git lock exists at %s; stop other Git/Orbit operations and remove this file only after confirming it is stale, then rerun orbit vendor sync", gitLock)
 	} else if !os.IsNotExist(err) {
-		return err
+		return result, err
 	}
 	v := d.Ref
 	ref := v
@@ -267,7 +277,7 @@ func (e *Engine) syncOne(ctx context.Context, d config.Dependency) error {
 		args := append([]string{"ls-remote", "--refs", "origin"}, candidates...)
 		advertised, err := e.git(ctx, p, args...)
 		if err != nil {
-			return err
+			return result, err
 		}
 		available := map[string]bool{}
 		for _, line := range strings.Split(advertised, "\n") {
@@ -280,13 +290,13 @@ func (e *Engine) syncOne(ctx context.Context, d config.Dependency) error {
 		for _, candidate := range candidates {
 			if available[candidate] {
 				if remoteRef != "" {
-					return fmt.Errorf("ambiguous branch/tag %q; use refs/heads/ or refs/tags/", v)
+					return result, fmt.Errorf("ambiguous branch/tag %q; use refs/heads/ or refs/tags/", v)
 				}
 				remoteRef = candidate
 			}
 		}
 		if remoteRef == "" {
-			return fmt.Errorf("upstream version %q does not exist", v)
+			return result, fmt.Errorf("upstream version %q does not exist", v)
 		}
 		ref = "refs/orbit/" + strings.TrimPrefix(remoteRef, "refs/")
 		refspec = "+" + remoteRef + ":" + ref
@@ -295,34 +305,42 @@ func (e *Engine) syncOne(ctx context.Context, d config.Dependency) error {
 		}
 	}
 	if _, err = e.git(ctx, p, "fetch", "--depth=1", "--no-tags", "origin", refspec); err != nil {
-		return err
+		return result, err
 	}
 	commit, err := e.git(ctx, p, "rev-parse", "--verify", ref+"^{commit}")
 	ok := err == nil
 	if !ok {
-		return fmt.Errorf("cannot resolve version %q", v)
+		return result, fmt.Errorf("cannot resolve version %q", v)
 	}
 	if tag != "" {
 		tag, err = e.git(ctx, p, "rev-parse", "--verify", tag)
 		if err != nil {
-			return err
+			return result, err
 		}
 	}
 	if s.Tag != "" && s.Tag != tag {
-		return fmt.Errorf("tag %s moved; refusing to replace pinned content", v)
+		return result, fmt.Errorf("tag %s moved; refusing to replace pinned content", v)
 	}
 	if _, err = e.git(ctx, p, "reset", "--hard", commit); err != nil {
-		return err
+		return result, err
 	}
 	if _, err = e.git(ctx, p, "clean", "-ffdx"); err != nil {
-		return err
+		return result, err
 	}
 	if err = e.unsupported(ctx, p); err != nil {
-		return err
+		return result, err
+	}
+	result.Commit = commit
+	result.Subject, err = e.git(ctx, p, "show", "-s", "--format=%s", commit)
+	if err != nil {
+		return result, err
 	}
 	s.Commit = commit
 	s.Tag = tag
-	return e.writeState(d, s)
+	if err = e.writeState(d, s); err != nil {
+		return result, err
+	}
+	return result, nil
 }
 
 func (e *Engine) unsupported(ctx context.Context, p string) error {
@@ -376,6 +394,31 @@ func unique(deps []config.Dependency) []config.Dependency {
 	return out
 }
 
+func shortCommit(commit string) string {
+	if len(commit) > 7 {
+		return commit[:7]
+	}
+	return commit
+}
+
+func printSyncResult(w io.Writer, result syncResult) {
+	current := shortCommit(result.Commit)
+	subject := strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, result.Subject)
+	switch {
+	case result.Previous == "":
+		fmt.Fprintf(w, "✓  [%s] added %s %s\n", result.Name, current, subject)
+	case result.Previous == result.Commit:
+		fmt.Fprintf(w, "✓  [%s] unchanged %s %s\n", result.Name, current, subject)
+	default:
+		fmt.Fprintf(w, "✓  [%s] updated %s..%s %s\n", result.Name, shortCommit(result.Previous), current, subject)
+	}
+}
+
 func (e *Engine) Sync(ctx context.Context, deps []config.Dependency) error {
 	if len(deps) == 0 {
 		return fmt.Errorf("no dependencies configured")
@@ -388,17 +431,18 @@ func (e *Engine) Sync(ctx context.Context, deps []config.Dependency) error {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var errs []error
+	var results []syncResult
 	for i := 0; i < jobs; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for d := range queue {
-				err := e.syncOne(ctx, d)
+				result, err := e.syncOne(ctx, d)
 				mu.Lock()
 				if err != nil {
 					errs = append(errs, fmt.Errorf("%s: %w", d.Name, err))
 				} else {
-					fmt.Fprintln(e.Out, "synced", d.Name)
+					results = append(results, result)
 				}
 				mu.Unlock()
 			}
@@ -409,6 +453,11 @@ func (e *Engine) Sync(ctx context.Context, deps []config.Dependency) error {
 	}
 	close(queue)
 	wg.Wait()
+	sort.Slice(errs, func(i, j int) bool { return errs[i].Error() < errs[j].Error() })
+	sort.Slice(results, func(i, j int) bool { return results[i].Name < results[j].Name })
+	for _, result := range results {
+		printSyncResult(e.Out, result)
+	}
 	// Validate every selected subdir even when multiple dependencies share a clone.
 	if len(errs) == 0 {
 		for _, d := range deps {

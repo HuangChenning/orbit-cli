@@ -348,7 +348,14 @@ func (e *Engine) Assemble(ctx context.Context, deps []config.Dependency, full bo
 		return err
 	}
 	completed = true
-	fmt.Fprintln(e.Out, "assembled", len(entries), "dependencies into", p)
+	for _, d := range deps {
+		source := d.Subdir
+		if source == "" {
+			source = "."
+		}
+		fmt.Fprintf(e.Out, "✓  [%s] mirrored %s@%s → %s\n", d.Name, source, d.Ref, d.MirrorDir)
+	}
+	fmt.Fprintln(e.Out, len(entries), "mirrored into", p)
 	return nil
 }
 

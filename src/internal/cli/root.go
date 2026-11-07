@@ -129,13 +129,18 @@ func Execute() error {
 		if e.Config.OrbitRepo == nil {
 			return fmt.Errorf("orbit_repo is required for vendor sync")
 		}
+		fmt.Fprintln(cmd.OutOrStdout(), "=== Vendor Sync ===")
 		var enabled []config.Dependency
+		skipped := 0
 		for _, dep := range d {
 			if dep.Vendoring() {
 				enabled = append(enabled, dep)
 			} else {
-				fmt.Fprintln(cmd.OutOrStdout(), "skipped", dep.Name, "(vendor: false)")
+				skipped++
 			}
+		}
+		if skipped > 0 {
+			fmt.Fprintln(cmd.OutOrStdout(), skipped, "skipped (vendor: false)")
 		}
 		if len(d) > 0 && len(enabled) == 0 {
 			return nil
