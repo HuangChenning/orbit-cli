@@ -262,6 +262,9 @@ func printUpdateResult(cmd *cobra.Command, result updater.Result, installed bool
 	} else {
 		fmt.Fprintln(cmd.OutOrStdout(), "Already up to date")
 	}
+	if result.Available && result.Notes != "" {
+		fmt.Fprintln(cmd.OutOrStdout(), result.Notes)
+	}
 	if result.Backup != "" {
 		fmt.Fprintln(cmd.OutOrStdout(), "Previous binary retained at:", result.Backup)
 	}

@@ -34,6 +34,7 @@ type release struct {
 	Tag        string  `json:"tag_name"`
 	Draft      bool    `json:"draft"`
 	Prerelease bool    `json:"prerelease"`
+	Body       string  `json:"body"`
 	Assets     []asset `json:"assets"`
 }
 type asset struct {
@@ -46,6 +47,7 @@ type Result struct {
 	Current, Latest string
 	Available       bool
 	Backup          string
+	Notes           string
 }
 type client struct {
 	http     *http.Client
@@ -116,6 +118,22 @@ func version(v string) ([3]uint64, error) {
 	}
 	return result, nil
 }
+func highlights(body string) string {
+	body = strings.ReplaceAll(strings.TrimSpace(body), "\r\n", "\n")
+	if body == "" {
+		return ""
+	}
+	var kept []string
+	for _, line := range strings.Split(body, "\n") {
+		trim := strings.TrimSpace(line)
+		if strings.HasPrefix(trim, "Upgrade with") || strings.HasPrefix(trim, "Unsigned packages") || strings.HasPrefix(trim, "All four native platforms") {
+			break
+		}
+		kept = append(kept, line)
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n"))
+}
+
 func available(current, latest string) (bool, error) {
 	target, err := version(latest)
 	if err != nil {
@@ -166,6 +184,7 @@ func (c client) check(ctx context.Context, current, goos, arch string) (Result, 
 		return result, r, fmt.Errorf("latest release is not stable")
 	}
 	result.Latest = r.Tag
+	result.Notes = highlights(r.Body)
 	result.Available, err = available(current, r.Tag)
 	if err != nil {
 		return result, r, err
