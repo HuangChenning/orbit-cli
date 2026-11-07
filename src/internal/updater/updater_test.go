@@ -77,6 +77,34 @@ func bundle(t *testing.T, isZip bool, members ...member) []byte {
 	}
 	return b.Bytes()
 }
+func TestHighlightsKeepsChangeSummaryAndDropsInstallBoilerplate(t *testing.T) {
+	const body = "Orbit v2.2.0 reports whether vendor sync actually updated each upstream.\n" +
+		"\n" +
+		"- vendor sync prints added, updated or unchanged\n" +
+		"\n" +
+		"Includes the change from #10. No configuration migration is required.\n" +
+		"\n" +
+		"Upgrade with `orbit update`, then check `orbit --version`.\n" +
+		"\n" +
+		"Unsigned packages are provided for macOS Apple Silicon/Intel, Linux amd64 and Windows amd64.\n" +
+		"\n" +
+		"All four native platforms passed functional acceptance on Go 1.26.10 and Go 1.27.3.\n"
+	want := "Orbit v2.2.0 reports whether vendor sync actually updated each upstream.\n" +
+		"\n" +
+		"- vendor sync prints added, updated or unchanged\n" +
+		"\n" +
+		"Includes the change from #10. No configuration migration is required."
+	if got := highlights(body); got != want {
+		t.Fatalf("highlights:\nwant %q\ngot  %q", want, got)
+	}
+	if got := highlights(""); got != "" {
+		t.Fatalf("empty body: %q", got)
+	}
+	if got := highlights("Upgrade with `orbit update`.\nUnsigned packages are provided.\n"); got != "" {
+		t.Fatalf("boilerplate-only body: %q", got)
+	}
+}
+
 func TestNativeArchivesAndVersions(t *testing.T) {
 	for _, target := range []struct{ os, arch, ext, binary string }{{"darwin", "arm64", "tar.gz", "orbit"}, {"darwin", "amd64", "tar.gz", "orbit"}, {"linux", "amd64", "tar.gz", "orbit"}, {"windows", "amd64", "zip", "orbit.exe"}} {
 		name, binary, err := archiveName("v1.2.3", target.os, target.arch)
@@ -153,6 +181,8 @@ func TestStableChecksAndVerifiedUpdates(t *testing.T) {
 	}
 	archive := bundle(t, runtime.GOOS == "windows", member{binary, tar.TypeReg, "new binary"})
 	digest := fmt.Sprintf("%x", sha256.Sum256(archive))
+	const body = "Lead change.\n\n- visible improvement\n\nUpgrade with `orbit update`, then check `orbit --version`.\n\nUnsigned packages are provided.\n"
+	const notes = "Lead change.\n\n- visible improvement"
 	for _, tc := range []struct {
 		name, current   string
 		status          int
@@ -198,7 +228,7 @@ func TestStableChecksAndVerifiedUpdates(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			r = release{Tag: "v1.2.3", Assets: []asset{{name, server.URL + "/archive"}, {"SHA256SUMS", server.URL + "/sums"}}}
+			r = release{Tag: "v1.2.3", Body: body, Assets: []asset{{name, server.URL + "/archive"}, {"SHA256SUMS", server.URL + "/sums"}}}
 			if tc.change != nil {
 				tc.change(&r)
 			}
@@ -230,6 +260,9 @@ func TestStableChecksAndVerifiedUpdates(t *testing.T) {
 			}
 			if result.Backup != "" {
 				t.Logf("backup retained: %s", result.Backup)
+			}
+			if !tc.wantErr && result.Notes != notes {
+				t.Fatalf("notes:\nwant %q\ngot  %q", notes, result.Notes)
 			}
 		})
 	}
