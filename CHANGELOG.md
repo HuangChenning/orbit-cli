@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2.0 — 2026-11-08
+
+- Report `orbit vendor sync` as added, updated or unchanged for each unique upstream, with short commits and sanitized subjects, then list each successfully mirrored asset and totals. Concurrent results stay deterministic; Git transfer progress remains hidden.
+
 ## v2.1.1 — 2026-10-29
 
 - Let Git clean up cache locks on Unix when an operation times out or is canceled, then forcibly terminate any remaining child processes. Interrupted shallow fetches can be retried without leaving `shallow.lock` behind during graceful termination.
