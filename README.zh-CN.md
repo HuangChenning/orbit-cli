@@ -18,8 +18,10 @@ Orbit 面向在多个工具、项目和设备间复用 **skills、workflows、sc
 
 ```console
 $ orbit vendor sync
-synced skill-creator
-assembled 1 dependencies into <local-repo>
+=== Vendor Sync ===
+✓  [skill-creator] added a1b2c3d Add skill creator
+✓  [skill-creator] mirrored skills/skill-creator@main → skills/skill-creator
+1 mirrored into <local-repo>
 $ orbit link
 $ orbit check
 {

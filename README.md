@@ -18,8 +18,10 @@ Example session from an isolated local Git repository, with the local repository
 
 ```console
 $ orbit vendor sync
-synced skill-creator
-assembled 1 dependencies into <local-repo>
+=== Vendor Sync ===
+✓  [skill-creator] added a1b2c3d Add skill creator
+✓  [skill-creator] mirrored skills/skill-creator@main → skills/skill-creator
+1 mirrored into <local-repo>
 $ orbit link
 $ orbit check
 {

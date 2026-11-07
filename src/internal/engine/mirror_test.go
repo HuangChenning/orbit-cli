@@ -1,10 +1,24 @@
 package engine
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestPrintSyncResultKeepsCommitSubjectOnOneLine(t *testing.T) {
+	var out bytes.Buffer
+	printSyncResult(&out, syncResult{
+		Name:    "fixture",
+		Commit:  "1234567890abcdef",
+		Subject: "safe\r\x1b[31m forged",
+	})
+	const want = "✓  [fixture] added 1234567 safe  [31m forged\n"
+	if out.String() != want {
+		t.Fatalf("sync output:\nwant %q\ngot  %q", want, out.String())
+	}
+}
 
 func TestRollbackRestoresOldSnapshotOverPartialCopy(t *testing.T) {
 	root := t.TempDir()
