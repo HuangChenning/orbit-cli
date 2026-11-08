@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2.1 — 2026-11-08
+
+- Print the latest stable release's change summary from `orbit update` and `orbit update check` when an update is available, omitting install boilerplate.
+
 ## v2.2.0 — 2026-11-08
 
 - Report `orbit vendor sync` as added, updated or unchanged for each unique upstream, with short commits and sanitized subjects, then list each successfully mirrored asset and totals. Concurrent results stay deterministic; Git transfer progress remains hidden.
